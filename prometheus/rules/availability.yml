@@ -1,0 +1,34 @@
+groups:
+  - name: availability
+    rules:
+      - alert: TargetUnavailable
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target {{ $labels.job }} indisponível"
+          description: "O target {{ $labels.instance }} não responde há pelo menos 5 minutos."
+
+      - alert: HostDiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+            /
+            node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}
+          ) < 0.15
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pouco espaço em disco"
+          description: "O filesystem {{ $labels.mountpoint }} possui menos de 15% livre."
+
+      - alert: HostMemoryHigh
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Uso elevado de memória"
+          description: "O host está acima de 90% de uso de memória há 15 minutos."
