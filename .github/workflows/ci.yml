@@ -50,11 +50,12 @@ jobs:
           -verify-config=true
 
       - name: Validate Alloy configuration
-        run: >-
-          docker run --rm
-          --volume "$PWD/alloy/config.alloy:/etc/alloy/config.alloy:ro"
-          grafana/alloy:v1.19.2
-          fmt --test /etc/alloy/config.alloy
+        run: |
+          docker run --rm \
+            --volume "$PWD/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
+            grafana/alloy:v1.19.2 \
+            fmt /etc/alloy/config.alloy > /tmp/config.alloy
+          diff --unified alloy/config.alloy /tmp/config.alloy
 
       - name: Build custom images
         run: docker compose build redis postgres-backup
