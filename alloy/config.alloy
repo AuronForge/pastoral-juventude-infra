@@ -18,9 +18,9 @@ discovery.relabel "containers" {
 }
 
 loki.source.docker "containers" {
-  host          = "unix:///var/run/docker.sock"
-  targets       = discovery.relabel.containers.output
-  forward_to    = [loki.process.application.receiver]
+  host             = "unix:///var/run/docker.sock"
+  targets          = discovery.relabel.containers.output
+  forward_to       = [loki.process.application.receiver]
   refresh_interval = "5s"
 }
 
