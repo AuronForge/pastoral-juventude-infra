@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate infrastructure
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
+      - name: Prepare validation environment
+        run: |
+          cp .env.example .env
+          sudo ./scripts/init-secrets.sh "$PWD/.ci-secrets"
+          echo "SECRETS_DIR=$PWD/.ci-secrets" >> "$GITHUB_ENV"
+
+      - name: Validate shell scripts
+        run: shellcheck scripts/*.sh docker/redis/*.sh docker/postgres-backup/*.sh
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+      - name: Validate Prometheus configuration
+        run: >-
+          docker run --rm
+          --volume "$PWD/prometheus:/etc/prometheus:ro"
+          --entrypoint /bin/promtool
+          prom/prometheus:v3.14.0
+          check config /etc/prometheus/prometheus.yml
+
+      - name: Validate Loki configuration
+        run: >-
+          docker run --rm
+          --volume "$PWD/loki/loki.yml:/etc/loki/loki.yml:ro"
+          grafana/loki:3.7.7
+          -config.file=/etc/loki/loki.yml
+          -verify-config=true
+
+      - name: Validate Alloy configuration
+        run: |
+          docker run --rm \
+            --volume "$PWD/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
+            grafana/alloy:v1.19.2 \
+            fmt /etc/alloy/config.alloy > /tmp/config.alloy
+          diff --unified alloy/config.alloy /tmp/config.alloy
+
+      - name: Build custom images
+        run: docker compose build redis postgres-backup

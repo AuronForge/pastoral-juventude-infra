@@ -1,0 +1,43 @@
+http:
+  routers:
+    backend-api:
+      entryPoints: [web]
+      rule: PathPrefix(`/api`)
+      priority: 100
+      middlewares: [security-headers]
+      service: backend
+
+    frontend:
+      entryPoints: [web]
+      rule: PathPrefix(`/`)
+      priority: 1
+      middlewares: [security-headers]
+      service: frontend
+
+  middlewares:
+    security-headers:
+      headers:
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: strict-origin-when-cross-origin
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+
+  services:
+    backend:
+      loadBalancer:
+        healthCheck:
+          path: /health/ready
+          interval: 15s
+          timeout: 5s
+        servers:
+          - url: http://backend:3000
+
+    frontend:
+      loadBalancer:
+        healthCheck:
+          path: /health
+          interval: 15s
+          timeout: 5s
+        servers:
+          - url: http://frontend:8080

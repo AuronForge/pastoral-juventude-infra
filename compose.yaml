@@ -1,0 +1,398 @@
+name: ${COMPOSE_PROJECT_NAME:-pastoral-juventude}
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
+services:
+  traefik:
+    <<: *service-defaults
+    image: traefik:v3.7.13
+    container_name: pastoral-traefik
+    command: ["--configFile=/etc/traefik/traefik.yml"]
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+    networks: [pastoral-edge, pastoral-app]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  tailscale:
+    <<: *service-defaults
+    image: tailscale/tailscale:v1.102.4
+    container_name: pastoral-tailscale
+    network_mode: service:traefik
+    depends_on:
+      traefik:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/opt/pastoral/tailscale-entrypoint.sh"]
+    environment:
+      TS_AUTH_ONCE: "true"
+      TS_HOSTNAME: ${TAILSCALE_HOSTNAME:-pastoral-juventude}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    cap_add: [NET_ADMIN, SYS_MODULE]
+    devices: [/dev/net/tun:/dev/net/tun]
+    secrets: [tailscale_auth_key]
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./scripts/tailscale-entrypoint.sh:/opt/pastoral/tailscale-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD", "tailscale", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    <<: *service-defaults
+    image: ${FRONTEND_IMAGE:-ghcr.io/auronforge/pastoral-juventude-frontend:0.1.0}
+    container_name: pastoral-frontend
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx, /var/run]
+    networks: [pastoral-app]
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  backend:
+    <<: *service-defaults
+    image: ${BACKEND_IMAGE:-ghcr.io/auronforge/pastoral-juventude-backend:0.1.0}
+    container_name: pastoral-backend
+    entrypoint: ["/bin/sh", "/opt/pastoral/backend-entrypoint.sh"]
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      LOG_LEVEL: info
+      POSTGRES_DB: ${POSTGRES_DB:-pastoral}
+      POSTGRES_USER: ${POSTGRES_USER:-pastoral}
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets: [postgres_password, redis_password, jwt_public_key, jwt_private_key]
+    volumes:
+      - ./scripts/backend-entrypoint.sh:/opt/pastoral/backend-entrypoint.sh:ro
+    networks: [pastoral-app, pastoral-data, pastoral-observability]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres:
+    <<: *service-defaults
+    image: postgres:17.11-alpine
+    container_name: pastoral-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pastoral}
+      POSTGRES_USER: ${POSTGRES_USER:-pastoral}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [pastoral-data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/redis/Dockerfile
+    image: pastoral-redis:8.6.6-1
+    container_name: pastoral-redis
+    secrets: [redis_password]
+    volumes: [redis-data:/data]
+    networks: [pastoral-data]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$(cat /run/secrets/redis_password) redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  grafana:
+    <<: *service-defaults
+    image: grafana/grafana:13.2.2
+    container_name: pastoral-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_HTTP_PORT: "3000"
+    secrets: [grafana_admin_password]
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - ${GRAFANA_BIND_ADDRESS:-127.0.0.1}:3001:3000
+    networks: [pastoral-observability]
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  prometheus:
+    <<: *service-defaults
+    image: prom/prometheus:v3.14.0
+    container_name: pastoral-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    read_only: true
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    networks: [pastoral-app, pastoral-observability]
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  loki:
+    <<: *service-defaults
+    image: grafana/loki:3.7.7
+    container_name: pastoral-loki
+    command: ["-config.file=/etc/loki/loki.yml"]
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks: [pastoral-observability]
+    healthcheck:
+      test: ["CMD", "/usr/bin/loki", "-version"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  alloy:
+    <<: *service-defaults
+    image: grafana/alloy:v1.19.2
+    container_name: pastoral-alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    networks: [pastoral-observability]
+    depends_on:
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "alloy", "fmt", "--test", "/etc/alloy/config.alloy"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  alertmanager:
+    <<: *service-defaults
+    image: prom/alertmanager:v0.34.0
+    container_name: pastoral-alertmanager
+    entrypoint: ["/bin/sh", "/opt/pastoral/alertmanager-entrypoint.sh"]
+    environment:
+      ALERT_SMTP_SMARTHOST: ${ALERT_SMTP_SMARTHOST:-smtp.example.com:587}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-alertas@example.com}
+      ALERT_SMTP_USERNAME: ${ALERT_SMTP_USERNAME:-alertas@example.com}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-operacao@example.com}
+    secrets: [smtp_password]
+    volumes:
+      - ./scripts/alertmanager-entrypoint.sh:/opt/pastoral/alertmanager-entrypoint.sh:ro
+      - alertmanager-data:/alertmanager
+    networks: [pastoral-observability]
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9093/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  node-exporter:
+    <<: *service-defaults
+    image: prom/node-exporter:v1.12.1
+    container_name: pastoral-node-exporter
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($$|/)
+    read_only: true
+    pid: host
+    volumes: ["/:/host:ro,rslave"]
+    networks: [pastoral-observability]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9100/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  cadvisor:
+    <<: *service-defaults
+    image: ghcr.io/google/cadvisor:v0.60.5
+    container_name: pastoral-cadvisor
+    privileged: true
+    devices: [/dev/kmsg:/dev/kmsg]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    networks: [pastoral-observability]
+    healthcheck:
+      test: ["CMD", "/usr/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres-exporter:
+    <<: *service-defaults
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: pastoral-postgres-exporter
+    entrypoint: ["/bin/sh", "/opt/pastoral/postgres-exporter-entrypoint.sh"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pastoral}
+      POSTGRES_USER: ${POSTGRES_USER:-pastoral}
+      POSTGRES_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets: [postgres_password]
+    volumes:
+      - ./scripts/postgres-exporter-entrypoint.sh:/opt/pastoral/postgres-exporter-entrypoint.sh:ro
+    networks: [pastoral-data, pastoral-observability]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9187/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  redis-exporter:
+    <<: *service-defaults
+    image: oliver006/redis_exporter:v1.91.1
+    container_name: pastoral-redis-exporter
+    entrypoint: ["/bin/sh", "/opt/pastoral/redis-exporter-entrypoint.sh"]
+    environment:
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    secrets: [redis_password]
+    volumes:
+      - ./scripts/redis-exporter-entrypoint.sh:/opt/pastoral/redis-exporter-entrypoint.sh:ro
+    networks: [pastoral-data, pastoral-observability]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9121/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres-backup:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/postgres-backup/Dockerfile
+    image: pastoral-postgres-backup:17.11-1
+    container_name: pastoral-postgres-backup
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pastoral}
+      POSTGRES_USER: ${POSTGRES_USER:-pastoral}
+      POSTGRES_HOST: postgres
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets: [postgres_password]
+    volumes:
+      - ${POSTGRES_BACKUP_PATH:-/mnt/pastoral-backup/postgres}:/backups
+    networks: [pastoral-data]
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/last-backup-success -mmin -1560 -print -quit | grep -q ."]
+      interval: 30m
+      timeout: 5s
+      retries: 2
+      start_period: 5m
+
+networks:
+  pastoral-edge:
+    name: pastoral-edge
+  pastoral-app:
+    name: pastoral-app
+  pastoral-data:
+    name: pastoral-data
+    internal: true
+  pastoral-observability:
+    name: pastoral-observability
+
+volumes:
+  tailscale-state:
+  postgres-data:
+  redis-data:
+  grafana-data:
+  prometheus-data:
+  loki-data:
+  alloy-data:
+  alertmanager-data:
+
+secrets:
+  postgres_password:
+    file: ${SECRETS_DIR:-/opt/pastoral/secrets}/postgres_password
+  redis_password:
+    file: ${SECRETS_DIR:-/opt/pastoral/secrets}/redis_password
+  grafana_admin_password:
+    file: ${SECRETS_DIR:-/opt/pastoral/secrets}/grafana_admin_password
+  jwt_private_key:
+    file: ${SECRETS_DIR:-/opt/pastoral/secrets}/jwt_private_key.pem
+  jwt_public_key:
+    file: ${SECRETS_DIR:-/opt/pastoral/secrets}/jwt_public_key.pem
+  tailscale_auth_key:
+    file: ${SECRETS_DIR:-/opt/pastoral/secrets}/tailscale_auth_key
+  smtp_password:
+    file: ${SECRETS_DIR:-/opt/pastoral/secrets}/smtp_password
