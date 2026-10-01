@@ -1,0 +1,154 @@
+# Entrega contínua — ambiente de desenvolvimento
+
+## Fluxo e escopo
+
+`feature/*` → PR → CI → merge em `develop` → CI do merge → imagens GHCR
+identificadas pelo SHA completo → dispatch na infraestrutura → validação da
+origem → Ubuntu → backup → migrations → containers → healthchecks → smoke E2E.
+
+Frontend e backend são entregues independentemente. O manifesto persistente
+mantém a imagem do outro componente. O primeiro deploy exige imagens válidas
+dos dois componentes e a imagem de migrations correspondente ao backend.
+Não se usa `latest`. A promoção de `release` e `main` não está automatizada nesta
+entrega. O login visual continua apenas no Storybook, sem rota de login na aplicação.
+
+`compose.development.yaml` é independente do Compose existente: projeto
+`pastoral-dev`, redes e volumes próprios. Sobe Traefik, frontend, backend,
+PostgreSQL e Redis. Observabilidade completa, Funnel e backup diário do Compose
+original não são iniciados por este workflow. Nesta etapa os backups são feitos
+antes de cada deploy; o backup diário e a observabilidade de desenvolvimento
+precisam de uma configuração específica antes de sua ativação.
+
+## Preparar Ubuntu
+
+Pré-requisitos: Docker Engine, Compose v2 com `up --wait`, Git, Bash, OpenSSL,
+`flock`, pacote `acl` e saída HTTPS para GitHub, GHCR, Docker Hub e npm.
+O deploy não requer Node ou Playwright instalados no host.
+
+Crie um usuário exclusivo, por exemplo `pastoral-runner`, e prepare:
+
+```bash
+sudo install -d -o pastoral-runner -g pastoral-runner -m 0700 /opt/pastoral/dev
+sudo apt-get install acl
+sudo bash scripts/init-secrets.sh /opt/pastoral/dev/secrets
+# O backend executa como UID 1001; o runner precisa atravessar o diretório.
+sudo setfacl -m u:pastoral-runner:rx /opt/pastoral/dev/secrets
+sudo setfacl -m u:1001:r /opt/pastoral/dev/secrets/postgres_password /opt/pastoral/dev/secrets/redis_password /opt/pastoral/dev/secrets/jwt_private_key.pem /opt/pastoral/dev/secrets/jwt_public_key.pem
+sudo install -o pastoral-runner -g pastoral-runner -m 0600 .env.development.example /opt/pastoral/dev/development.env
+```
+
+Complete `development.env` com os SHAs das imagens já publicadas. Os valores são
+lidos pelo Bash: use atribuições simples e aspas para valores que necessitem delas.
+Não coloque comandos neste arquivo. Nunca versione os secrets ou esse arquivo.
+Não reutilize credenciais nem volumes de produção. A inicialização não substitui
+secrets existentes. Não gere nova senha para um volume PostgreSQL já inicializado.
+
+O acesso inicial fica em `http://localhost:8080`. Para acessar pela LAN, defina
+`DEV_BIND_ADDRESS` com o IP LAN do Ubuntu e `DEV_PUBLIC_URL` com a URL exata.
+Se habilitar HTTPS posteriormente, configure `COOKIE_SECURE=true`.
+Os bancos e rotas técnicas permanecem internos; `/api/*` e `/` passam pelo Traefik.
+
+## Runner e permissões
+
+Registre um runner Linux x64 com label `pastoral-dev`, como serviço sob o usuário
+dedicado. O usuário precisa de acesso ao Docker; esse acesso permite controlar
+o host, portanto o runner é exclusivo de implantação.
+
+O repositório infra é público. Antes de registrar um runner com acesso ao host,
+use um runner group restrito ao workflow
+`AuronForge/pastoral-juventude-infra/.github/workflows/deploy-development.yml@refs/heads/develop`.
+Se o plano do GitHub não oferecer restrição por workflow, não conecte um runner
+com Docker do host a este repositório público: use uma infraestrutura privada de
+deploy ou um executor isolado dedicado, revisando o fluxo antes de ativá-lo.
+Uma label sozinha não impede outro workflow de selecionar o runner.
+
+Crie o GitHub Environment `desenvolvimento` na infra e permita somente a branch
+`develop`. Proteja `develop` com PR e CI obrigatórios; limite quem pode alterar
+workflows e secrets. PRs, builds e testes de qualidade executam nos runners do
+GitHub; somente a implantação validada usa o Ubuntu.
+
+| Local            | Configuração                                    | Finalidade                                                   |
+| ---------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| Backend/frontend | variável `DEV_AUTO_DEPLOY=true`                 | Dispatch após publicação aprovada                            |
+| Backend/frontend | secret `INFRA_DISPATCH_TOKEN`                   | Token com Actions: write somente na infra                    |
+| Infra            | variável `DEV_DEPLOY_ENABLED=true`              | Habilitar a implantação após bootstrap                       |
+| Infra            | variável `DEV_E2E_REF`                          | SHA completo aprovado deste PR E2E, após merge               |
+| Infra            | secret `SOURCE_READ_TOKEN`, quando necessário   | Contents/Actions: read nos repositórios de origem privados   |
+| Infra            | variável `DEV_GHCR_PRIVATE=true`, se necessário | Autenticar para baixar imagens privadas                      |
+| Infra            | variável `GHCR_USER` e secret `GHCR_READ_TOKEN` | Usuário/token com read:packages, sem permissão de publicação |
+
+## Ordem de bootstrap
+
+1. Revisar e fazer merge dos PRs de backend, frontend, E2E e infra em `develop`.
+2. Promover os novos workflows para a branch padrão por PR. `workflow_run` e
+   `workflow_dispatch` dependem da existência do arquivo na branch padrão.
+   Não promova essas mudanças com deploy de produção; esta entrega atua só em `develop`.
+3. Manter `DEV_AUTO_DEPLOY` e `DEV_DEPLOY_ENABLED` desativados durante a preparação.
+4. Executar push/merge em `develop` de backend e frontend e aguardar CI/publicação.
+5. Preencher o arquivo do host com as duas imagens e migrations desse backend.
+6. Configurar runner, environment, tokens e `DEV_E2E_REF` com o SHA aprovado.
+7. Habilitar `DEV_DEPLOY_ENABLED`; executar `Deploy development` na branch `develop`
+   informando componente e SHA publicado. A CI da infra nesse SHA também deve ter passado.
+8. Conferir containers, frontend pela URL configurada, backup e artefatos E2E.
+9. Habilitar `DEV_AUTO_DEPLOY` nos dois repositórios de aplicação.
+
+O workflow recusa um SHA de aplicação que já não seja o HEAD da `develop`.
+Se surgir um novo merge enquanto uma publicação aguarda, a entrega antiga falha
+na validação e a publicação do novo HEAD deve iniciar uma nova implantação.
+
+## Verificação e evidências
+
+O deploy serializa execuções com concurrency do GitHub e `flock` no host. Cada
+execução copia configurações e scripts para um diretório persistente; os volumes
+bind não dependem do checkout temporário do runner. Aplica `prisma migrate deploy`
+com uma imagem específica contendo schema, migrations e CLI.
+
+A CI do backend testa o carregamento de Argon2/Prisma na imagem e constrói a
+imagem de migrations. O deploy verifica `/health/ready` e executa o Playwright
+em container na rede interna. A suíte atual cobre a página inicial, processo vivo
+e dependências prontas; não comprova login ou outros fluxos ainda não implementados.
+
+Relatórios Playwright/JUnit e manifesto de versões ficam em artefatos do GitHub
+por 14 dias e em `/opt/pastoral/dev/reports`. Backup e release ficam em
+`/opt/pastoral/dev/backups` e `/opt/pastoral/dev/releases`. Nesta primeira entrega
+a limpeza desses diretórios é manual: acompanhe espaço em disco.
+Dados para login não são criados pelo deploy; preparar usuários/seeds é uma etapa
+separada. O reset de regressão atual só altera usuários que já existem.
+
+## Falha e rollback
+
+Falha em pull ou migration interrompe as próximas etapas. Depois de atualizar os
+containers, falha em healthcheck/E2E pode deixar a versão candidata em execução.
+O job fica vermelho, preserva o manifesto anterior e registra o diretório da
+candidata. Não há rollback automático de banco ou aplicação.
+
+`current-images.env` e o link `current` representam a última entrega validada;
+`previous-images.env` preserva a entrega validada anterior. Após uma falha, use
+`current-images.env` para recuperar as imagens. Após um deploy bem-sucedido que
+precisa ser revertido, use `previous-images.env`.
+
+Antes de reverter, verifique a compatibilidade das imagens antigas com o schema
+atual. Se compatíveis, no host, como usuário do runner:
+
+```bash
+set -a
+source /opt/pastoral/dev/development.env
+# Em caso de falha da candidata; use previous-images.env para reverter um sucesso.
+source /opt/pastoral/dev/current-images.env
+set +a
+docker compose --project-name pastoral-dev -f /opt/pastoral/dev/current/compose.development.yaml pull backend frontend
+docker compose --project-name pastoral-dev -f /opt/pastoral/dev/current/compose.development.yaml up -d --wait backend frontend traefik
+```
+
+Reexecute healthchecks e E2E e registre as versões recuperadas no incidente.
+O Prisma não desfaz migrations por esse procedimento. Restaurar um dump exige
+manutenção, interrupção do backend, banco de destino controlado e validação;
+consulte `OPERACAO.md`. Não execute `down -v` nem remova volumes para corrigir deploy.
+
+## Validação desta entrega
+
+As verificações locais cobrem sintaxe Bash/SH e estrutura YAML. As validações
+Docker, imagens, migrations e Playwright são responsabilidade das CIs dos PRs
+e do primeiro deploy no Ubuntu. O ambiente não é considerado iniciado até
+essas execuções passarem. Integração do login na aplicação, massa funcional,
+observabilidade de desenvolvimento e promoção de ambientes são próximas entregas.

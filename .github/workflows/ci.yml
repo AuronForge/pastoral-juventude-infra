@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop, release]
 
 permissions:
   contents: read
@@ -31,7 +31,12 @@ jobs:
         run: shellcheck scripts/*.sh docker/redis/*.sh docker/postgres-backup/*.sh
 
       - name: Validate Docker Compose
-        run: docker compose config --quiet
+        run: |
+          docker compose config --quiet
+          BACKEND_IMAGE=ghcr.io/auronforge/pastoral-juventude-backend:dev-ci \
+          MIGRATION_IMAGE=ghcr.io/auronforge/pastoral-juventude-backend:dev-ci-migrations \
+          FRONTEND_IMAGE=ghcr.io/auronforge/pastoral-juventude-frontend:dev-ci \
+          docker compose -f compose.development.yaml config --quiet
 
       - name: Validate Prometheus configuration
         run: >-

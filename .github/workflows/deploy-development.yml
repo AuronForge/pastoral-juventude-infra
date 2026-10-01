@@ -1,0 +1,110 @@
+name: Deploy development
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Application to update
+        type: choice
+        options: [backend, frontend]
+        required: true
+      commit_sha:
+        description: Full SHA published after successful develop CI
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pastoral-development-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/develop' && vars.DEV_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      e2e_sha: ${{ steps.validate.outputs.e2e_sha }}
+    steps:
+      - name: Validate revision and successful workflows
+        id: validate
+        env:
+          GH_TOKEN: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
+          COMPONENT: ${{ inputs.component }}
+          SOURCE_SHA: ${{ inputs.commit_sha }}
+          INFRA_SHA: ${{ github.sha }}
+          E2E_SHA: ${{ vars.DEV_E2E_REF }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$COMPONENT" =~ ^(backend|frontend)$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ && "$E2E_SHA" =~ ^[0-9a-f]{40}$ ]]
+          source_repo="AuronForge/pastoral-juventude-$COMPONENT"
+          current_sha="$(gh api "repos/$source_repo/branches/develop" --jq '.commit.sha')"
+          [[ "$current_sha" == "$SOURCE_SHA" ]] || { echo 'Stale application revision; deploy the current validated develop SHA.'; exit 1; }
+          check_run() {
+            gh api "repos/$1/actions/runs?head_sha=$2&per_page=100" \
+              --jq ".workflow_runs | any(.name == \"$3\" and .head_branch == \"develop\" and .event == \"$4\" and .conclusion == \"success\")" | grep -qx true
+          }
+          check_run "$source_repo" "$SOURCE_SHA" CI push
+          # workflow_run publications run on the default-branch workflow SHA.
+          # Match their explicit source-SHA run title, then allow dispatch to finish.
+          published=false
+          for attempt in {1..12}; do
+            if gh api "repos/$source_repo/actions/runs?event=workflow_run&per_page=100" \
+              --jq ".workflow_runs | any(.path == \".github/workflows/publish-development.yml\" and .display_title == \"Publish development $SOURCE_SHA\" and .conclusion == \"success\")" | grep -qx true; then
+              published=true
+              break
+            fi
+            sleep 5
+          done
+          [[ "$published" == true ]]
+          check_run AuronForge/pastoral-juventude-infra "$INFRA_SHA" CI push
+          gh api "repos/AuronForge/pastoral-juventude-e2e/commits/$E2E_SHA" --jq '.sha' | grep -qx "$E2E_SHA"
+          echo "e2e_sha=$E2E_SHA" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: validate
+    environment: desenvolvimento
+    runs-on: [self-hosted, linux, x64, pastoral-dev]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: infra
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: AuronForge/pastoral-juventude-e2e
+          ref: ${{ needs.validate.outputs.e2e_sha }}
+          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
+          path: e2e
+          persist-credentials: false
+      - name: Authenticate to GHCR
+        if: vars.DEV_GHCR_PRIVATE == 'true'
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          GHCR_USER: ${{ vars.GHCR_USER }}
+        run: |
+          test -n "$GHCR_TOKEN"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
+      - name: Deploy and run internal E2E
+        id: deploy
+        env:
+          COMPONENT: ${{ inputs.component }}
+          SOURCE_SHA: ${{ inputs.commit_sha }}
+        run: bash infra/scripts/deploy-development.sh "$COMPONENT" "$SOURCE_SHA" "$GITHUB_WORKSPACE/e2e"
+      - name: Publish deployment evidence
+        if: ${{ !cancelled() && steps.deploy.outputs.report_dir != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: development-deployment-${{ github.run_id }}
+          path: ${{ steps.deploy.outputs.report_dir }}
+          retention-days: 14
+      - name: Remove registry session
+        if: ${{ always() && vars.DEV_GHCR_PRIVATE == 'true' }}
+        run: docker logout ghcr.io
