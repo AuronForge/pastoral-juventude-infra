@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { request } from 'node:http';
 import { createHealthServer } from './server.mjs';
 
 const now = Date.parse('2026-10-01T22:50:10Z');
@@ -84,5 +85,18 @@ test('coalesces readiness probes and rejects writes and unknown routes', async (
     assert.equal(probes, 1);
     assert.equal((await fetch(url + '/health/ready', { method: 'POST' })).status, 405);
     assert.equal((await fetch(url + '/other')).status, 404);
+  });
+});
+
+test('malformed request target does not stop the HTTP server', async () => {
+  await withServer({}, async url => {
+    const status = await new Promise((resolve, reject) => {
+      const req = request(url, { path: 'http://' }, response => {
+        response.resume(); resolve(response.statusCode);
+      });
+      req.on('error', reject); req.end();
+    });
+    assert.equal(status, 400);
+    assert.equal((await fetch(url + '/health/live')).status, 200);
   });
 });
