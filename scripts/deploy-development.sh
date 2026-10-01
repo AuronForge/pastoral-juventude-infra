@@ -73,7 +73,7 @@ trap diagnose EXIT
 
 "${compose[@]}" config --quiet
 "${compose[@]}" pull traefik frontend backend migrate postgres
-"${compose[@]}" build redis
+"${compose[@]}" build redis health-report
 "${compose[@]}" up -d --wait --wait-timeout 180 postgres redis
 # Snapshot before every migration, including the first empty baseline.
 # Variables below expand inside the PostgreSQL container.
@@ -81,8 +81,10 @@ trap diagnose EXIT
 "${compose[@]}" exec -T postgres sh -c 'export PGPASSWORD="$(cat /run/secrets/postgres_password)"; exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$deploy_root/backups/$release_id.dump.tmp"
 mv "$deploy_root/backups/$release_id.dump.tmp" "$deploy_root/backups/$release_id.dump"
 "${compose[@]}" run --rm --no-deps migrate
-"${compose[@]}" up -d --wait --wait-timeout 180 backend frontend traefik
+"${compose[@]}" up -d --wait --wait-timeout 180 backend frontend health-report traefik
 "${compose[@]}" exec -T backend node -e "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+
+python3 "$repo_root/scripts/publish-health-report.py"
 
 e2e_sha="$(git -C "$e2e_checkout" rev-parse HEAD)"
 e2e_image="pastoral-dev-e2e:$e2e_sha"
@@ -107,3 +109,4 @@ ln -sfn "$release_dir" "$deploy_root/current"
   cat "$deploy_root/current-images.env"
 } > "$report_dir/deployment.txt"
 echo "Development deployment and smoke tests passed: $release_id"
+
