@@ -30,6 +30,7 @@ def memory(path=Path('/proc/meminfo')):
 
 def collect(root=Path('/opt/pastoral/dev')):
     report = {'timestamp': datetime.now(timezone.utc).isoformat(),
+              'dockerHost': os.environ.get('DOCKER_HOST', 'unix:///var/run/docker.sock'),
               'host': {}, 'containers': {}, 'readiness': None, 'errors': []}
     try:
         disk = shutil.disk_usage(root)
@@ -78,6 +79,13 @@ def collect(root=Path('/opt/pastoral/dev')):
 
 
 if __name__ == '__main__':
+    endpoint_file = Path('/opt/pastoral/dev/docker-host')
+    endpoint = os.environ.get('DOCKER_HOST') or (
+        endpoint_file.read_text().strip() if endpoint_file.exists() else 'unix:///var/run/docker.sock')
+    if not endpoint.startswith('unix:///') or any(char.isspace() for char in endpoint):
+        raise SystemExit('Invalid development Docker endpoint')
+    os.environ['DOCKER_HOST'] = endpoint
+    os.environ.pop('DOCKER_CONTEXT', None)
     result = collect()
     print(json.dumps(result, indent=2))
     sys.exit(0 if result['status'] == 'ok' else 1)

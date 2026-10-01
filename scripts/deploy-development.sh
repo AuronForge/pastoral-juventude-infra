@@ -21,6 +21,9 @@ if [[ -f "$deploy_root/current-images.env" ]]; then
   source "$deploy_root/current-images.env"
 fi
 set +a
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/development-docker.sh"
+development_docker
 image_prefix=ghcr.io/auronforge/pastoral-juventude
 if [[ "$component" == backend ]]; then
   export BACKEND_IMAGE="$image_prefix-backend:dev-$commit_sha"
@@ -36,12 +39,22 @@ release_id="${GITHUB_RUN_ID:-manual}-$(date -u +%Y%m%dT%H%M%SZ)"
 release_dir="$deploy_root/releases/$release_id"
 mkdir -p "$release_dir/scripts" "$release_dir/traefik"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cp "$repo_root/compose.development.yaml" "$release_dir/"
-cp "$repo_root/scripts/backend-entrypoint.sh" "$release_dir/scripts/"
+cp "$repo_root/compose.development.yaml" "$repo_root/compose.development.desktop.yaml" "$release_dir/"
+cp "$repo_root/scripts/"*.sh "$repo_root/scripts/"*.py "$release_dir/scripts/"
 cp -R "$repo_root/docker" "$release_dir/"
 cp "$repo_root/traefik/traefik.yml" "$repo_root/traefik/dynamic.development.yml" "$release_dir/traefik/"
 chmod 0644 "$release_dir/scripts/backend-entrypoint.sh" "$release_dir/traefik/traefik.yml" "$release_dir/traefik/dynamic.development.yml"
+desktop_mode=false
+if [[ "$DOCKER_HOST" != unix:///var/run/docker.sock ]]; then
+  desktop_mode=true
+  export DEV_RUNTIME_VOLUME="pastoral-dev_runtime-$release_id"
+  bash "$repo_root/scripts/sync-development-runtime.sh" "$release_dir" "$DEV_RUNTIME_VOLUME" "${SECRETS_DIR:-$deploy_root/secrets}"
+  printf 'DEV_RUNTIME_VOLUME=%s\n' "$DEV_RUNTIME_VOLUME" > "$release_dir/desktop-runtime.env"
+fi
 compose=(docker compose --project-name pastoral-dev --project-directory "$release_dir" -f "$release_dir/compose.development.yaml")
+if [[ "$desktop_mode" == true ]]; then
+  compose+=(-f "$release_dir/compose.development.desktop.yaml")
+fi
 report_dir="$deploy_root/reports/$release_id"
 mkdir -p "$report_dir/playwright-report" "$report_dir/test-results"
 export DEV_REPORT_DIR="$report_dir"
@@ -74,12 +87,9 @@ mv "$deploy_root/backups/$release_id.dump.tmp" "$deploy_root/backups/$release_id
 e2e_sha="$(git -C "$e2e_checkout" rev-parse HEAD)"
 e2e_image="pastoral-dev-e2e:$e2e_sha"
 docker build --tag "$e2e_image" "$e2e_checkout"
-# Run as the runner user so reports do not leave root-owned workspace files.
-docker run --rm --network pastoral-dev_app --user "$(id -u):$(id -g)" \
-  -e HOME=/tmp -e CI=true -e E2E_FRONTEND_BASE_URL=http://traefik \
-  -e E2E_BACKEND_BASE_URL=http://backend:3000 \
-  -v "$report_dir/playwright-report:/app/playwright-report" \
-  -v "$report_dir/test-results:/app/test-results" "$e2e_image"
+# Reports are copied from the container, avoiding host/VM UID mapping.
+bash "$repo_root/scripts/run-development-e2e.sh" "$e2e_image" "$report_dir"
+python3 "$repo_root/scripts/health-development.py" > "$report_dir/resources.json" || echo "Resource diagnostics partial; see resources.json."
 
 {
   printf 'BACKEND_IMAGE=%s\n' "$BACKEND_IMAGE"

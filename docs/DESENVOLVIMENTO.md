@@ -19,11 +19,19 @@ original não são iniciados por este workflow. Nesta etapa os backups são feit
 antes de cada deploy; o backup diário e a observabilidade de desenvolvimento
 precisam de uma configuração específica antes de sua ativação.
 
+## Docker Desktop no Ubuntu
+
+Para visualizar a implantação no Docker Desktop, seguir
+[DOCKER-DESKTOP.md](DOCKER-DESKTOP.md): inclui acesso persistente do runner,
+seleção explícita do daemon, cópia dos volumes, backup, validação e retorno.
+O Desktop usa VM e volumes diferentes do Engine. A migração não acontece
+somente por merge nem por mudança de contexto do usuário.
+
 ## Preparar Ubuntu
 
 Pré-requisitos: Docker Engine, Compose v2 com `up --wait`, Git, Bash, OpenSSL,
 `flock`, pacote `acl` e saída HTTPS para GitHub, GHCR, Docker Hub e npm.
-O deploy não requer Node ou Playwright instalados no host.
+O deploy não requer Node ou Playwright instalados no host. Python 3 é usado para a evidência de recursos.
 
 Crie um usuário exclusivo, por exemplo `pastoral-runner`, e prepare:
 

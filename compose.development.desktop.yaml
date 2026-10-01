@@ -1,0 +1,37 @@
+# Compose >= 2.24.4. All runtime mounts are daemon-local named volumes.
+services:
+  traefik:
+    command:
+      - --configFile=/etc/pastoral/traefik/traefik.yml
+      - --providers.file.directory=/etc/pastoral/traefik/dynamic
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+  backend:
+    entrypoint: [/bin/sh, /etc/pastoral/scripts/backend-entrypoint.sh]
+    secrets: !reset []
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - runtime-secrets:/run/secrets:ro
+  migrate:
+    entrypoint: [/bin/sh, /etc/pastoral/scripts/backend-entrypoint.sh]
+    secrets: !reset []
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - runtime-secrets:/run/secrets:ro
+  postgres:
+    secrets: !reset []
+    volumes: !override
+      - postgres-data:/var/lib/postgresql/data
+      - runtime-secrets:/run/secrets:ro
+  redis:
+    secrets: !reset []
+    volumes: !override
+      - redis-data:/data
+      - runtime-secrets:/run/secrets:ro
+volumes:
+  runtime:
+    name: ${DEV_RUNTIME_VOLUME:?Set a release-specific runtime volume}
+    external: true
+  runtime-secrets:
+    name: pastoral-dev_runtime-secrets
+    external: true

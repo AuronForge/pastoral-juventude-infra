@@ -38,6 +38,20 @@ jobs:
           FRONTEND_IMAGE=ghcr.io/auronforge/pastoral-juventude-frontend:dev-ci \
           docker compose -f compose.development.yaml config --quiet
 
+      - name: Validate Desktop Compose
+        env:
+          BACKEND_IMAGE: ghcr.io/auronforge/pastoral-juventude-backend:dev-ci
+          MIGRATION_IMAGE: ghcr.io/auronforge/pastoral-juventude-backend:dev-ci-migrations
+          FRONTEND_IMAGE: ghcr.io/auronforge/pastoral-juventude-frontend:dev-ci
+          DEV_RUNTIME_VOLUME: pastoral-dev_runtime-ci
+        run: docker compose -f compose.development.yaml -f compose.development.desktop.yaml config --quiet
+
+      - name: Test explicit daemon selection
+        run: bash scripts/test-development-docker.sh
+
+      - name: Test Desktop runtime portability
+        run: bash scripts/test-desktop-runtime.sh
+
       - name: Validate Prometheus configuration
         run: >-
           docker run --rm
