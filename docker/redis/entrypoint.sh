@@ -22,4 +22,11 @@ maxmemory 512mb
 maxmemory-policy volatile-lru
 EOF
 
+# The official entrypoint drops from root to redis before opening this file.
+# Keep the password private while giving that user ownership.
+chmod 0600 /tmp/pastoral-redis.conf
+if [ "$(id -u)" = 0 ]; then
+  chown redis:redis /tmp/pastoral-redis.conf
+fi
+
 exec docker-entrypoint.sh redis-server /tmp/pastoral-redis.conf
