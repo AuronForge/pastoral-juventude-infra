@@ -70,3 +70,6 @@ jobs:
 
       - name: Test versioned Traefik routing
         run: python3 scripts/test-traefik-routing.py
+
+      - name: Test development diagnostics
+        run: python3 scripts/test-health-development.py
