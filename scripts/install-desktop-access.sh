@@ -12,11 +12,11 @@ cat > /usr/local/libexec/pastoral-desktop-access <<EOF
 set -euo pipefail
 for directory in "$desktop_home" "$desktop_home/.docker" "$desktop_home/.docker/desktop"; do
   [[ -d "\$directory" && ! -L "\$directory" ]] || exit 1
-  setfacl -m u:pastoral-runner:--x "\$directory"
+  getfacl -cp "\$directory" | grep -qx 'user:pastoral-runner:--x' || setfacl -m u:pastoral-runner:--x "\$directory"
 done
 socket="$desktop_home/.docker/desktop/docker.sock"
 if [[ -S "\$socket" && ! -L "\$socket" ]]; then
-  setfacl -m u:pastoral-runner:rw- "\$socket"
+  getfacl -cp "\$socket" | grep -qx 'user:pastoral-runner:rw-' || setfacl -m u:pastoral-runner:rw- "\$socket"
 fi
 EOF
 chmod 0755 /usr/local/libexec/pastoral-desktop-access
