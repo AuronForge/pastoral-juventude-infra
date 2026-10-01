@@ -10,7 +10,9 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/runtime/scripts" "$stage/runtime/traefik/dynamic" "$stage/secrets"
 cp "$release/scripts/backend-entrypoint.sh" "$stage/runtime/scripts/"
-cp "$release/traefik/traefik.yml" "$stage/runtime/traefik/"
+# Static file configuration and CLI flags are mutually exclusive in Traefik.
+sed 's#directory: /etc/traefik/dynamic#directory: /etc/pastoral/traefik/dynamic#' \
+  "$release/traefik/traefik.yml" > "$stage/runtime/traefik/traefik.yml"
 cp "$release/traefik/dynamic.development.yml" "$stage/runtime/traefik/dynamic/dynamic.yml"
 for secret in postgres_password redis_password jwt_private_key jwt_public_key; do
   source_file="$secrets_dir/$secret"
