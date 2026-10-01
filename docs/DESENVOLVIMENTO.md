@@ -385,9 +385,9 @@ uso do container, não uma decomposição dos buffers internos do banco. Este
 endpoint público inclui metadados operacionais como caminho do socket e disco,
 mas não publica senhas, chaves ou variáveis de ambiente dos containers.
 
-Se o Desktop ou o coletor parar, o último relatório fica disponível e passa a
-503 após vencer. Reativar o Desktop e conferir o journal; o timer tenta outra
-vez automaticamente. Para uma coleta manual sem aguardar o timer:
+Se apenas o coletor parar, o último relatório fica disponível e passa a 503
+após vencer. Se o Desktop parar, os containers e o endpoint ficam indisponíveis.
+Reativar o Desktop e conferir o journal; o timer tenta outra vez automaticamente. Para uma coleta manual sem aguardar o timer:
 
 ```bash
 sudo systemctl start pastoral-health-report.service
