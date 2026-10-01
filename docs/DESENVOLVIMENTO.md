@@ -92,8 +92,8 @@ cloudflared tunnel --url http://127.0.0.1:8082
 ```
 
 Compartilhar a URL HTTPS gerada com o caminho completo `/api/v1/...`.
-A raiz, rotas do frontend, healthchecks e versões não configuradas retornam
-404 nessa entrada. O serviço HTTP da API permanece no backend:3000 dentro
+A raiz, rotas do frontend, healthchecks internos e versões não configuradas
+retornam 404 nessa entrada. A exceção pública é o healthcheck descrito abaixo. O serviço HTTP da API permanece no backend:3000 dentro
 do Docker. Não publicar diretamente a porta 3000.
 
 Quick Tunnel fornece um hostname temporário sem domínio próprio. O processo
@@ -124,6 +124,33 @@ SameSite, CSRF e comportamento de cookies do navegador; somente CORS não resolv
 Antes de configurar o rewrite definitivo, obter a URL atual do túnel e o
 domínio do projeto Vercel. Nunca colocar tokens de autenticação em variáveis
 `VITE_*`, pois elas são públicas no build.
+
+## Healthcheck público da API
+
+Na entrada exclusiva do túnel, `GET /api/v1/health` usa o router
+`backend-public-health-v1` com prioridade 200 e reescrita exata para
+`/health/live` no backend. O caminho externo permanece versionado.
+A resposta saudável é HTTP 200 com `{"status":"ok"}` e
+`Cache-Control: no-store`. Não requer autenticação nem expõe o estado
+individual de PostgreSQL/Redis.
+
+Após novo deploy:
+
+```bash
+curl -i http://127.0.0.1:8082/api/v1/health
+# Externamente: substituir pela URL atual gerada pelo cloudflared.
+curl -i https://URL-ATUAL.trycloudflare.com/api/v1/health
+```
+
+`/health/live` e `/health/ready` continuam sem roteamento público.
+O readiness permanece sendo usado internamente pelo Traefik e pelo E2E.
+O serviço do router público também está sujeito ao healthcheck interno
+do load balancer: se não houver backend saudável disponível, o gateway
+pode responder 503 mesmo com o processo vivo. Uma falha de conexão do túnel
+pode gerar 502. Portanto, esse endpoint não diagnostica a causa da indisponibilidade.
+
+A CI executa Traefik real para comprovar a reescrita exata, ausência de cache
+e bloqueio dos caminhos internos. A validação externa exige túnel ativo.
 
 ## Runner e permissões
 
