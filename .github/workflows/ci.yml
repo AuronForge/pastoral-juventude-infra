@@ -67,3 +67,6 @@ jobs:
 
       - name: Test Redis startup and authentication
         run: bash scripts/test-redis.sh
+
+      - name: Test versioned Traefik routing
+        run: python3 scripts/test-traefik-routing.py
