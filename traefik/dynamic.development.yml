@@ -1,7 +1,7 @@
 http:
   routers:
     backend-api-v1:
-      entryPoints: [web]
+      entryPoints: [web, api-public]
       rule: Path(`/api/v1`) || PathPrefix(`/api/v1/`)
       priority: 100
       middlewares: [security-headers]

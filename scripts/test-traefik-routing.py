@@ -50,11 +50,15 @@ def check_config(path, backend_port, frontend_port):
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            api_port = sock.getsockname()[1]
         container = subprocess.check_output([
             "docker", "run", "--detach", "--network", "host",
             "--volume", f"{config}:/config/dynamic.yml:ro",
             "traefik:v3.7.13",
             f"--entrypoints.web.address=127.0.0.1:{port}",
+            f"--entrypoints.api-public.address=127.0.0.1:{api_port}",
             "--providers.file.filename=/config/dynamic.yml",
         ], text=True).strip()
         try:
@@ -77,7 +81,18 @@ def check_config(path, backend_port, frontend_port):
                 assert request(port, url)[0] == 404, url
             for url in ("/", "/login", "/apiculture"):
                 assert request(port, url) == (200, f"frontend {url}"), url
-            print(f"{path.name}: version routing, preserved paths and 404 passed")
+            for url in ("/", "/login", "/health/ready", "/api", "/api/v2/pessoas"):
+                assert request(api_port, url)[0] == 404, url
+            for url in ("/api/v1", "/api/v1/pessoas?pagina=1"):
+                expected = ((200, f"backend {url}")
+                            if path.name == "dynamic.development.yml"
+                            else None)
+                response = request(api_port, url)
+                if expected:
+                    assert response == expected, url
+                else:
+                    assert response[0] == 404, url
+            print(f"{path.name}: version routing and API-only isolation passed")
         except Exception:
             subprocess.run(["docker", "logs", container], check=False)
             raise

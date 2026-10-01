@@ -75,6 +75,56 @@ Após merge na infra, aguardar sua CI e solicitar um novo deploy de desenvolvime
 com o HEAD publicado de um componente. Alterações somente na infra não são
 disparadas pelos workflows de publicação de backend/frontend.
 
+## Túnel público exclusivo da API e frontend no Vercel
+
+A entrada `api-public` do Traefik escuta em 8082 dentro do container e é
+publicada **somente em 127.0.0.1** no Ubuntu, pela variável
+`DEV_API_TUNNEL_PORT` (padrão 8082). O router `backend-api-v1` aceita
+`web` e `api-public`; o frontend aceita somente `web`.
+
+Após o merge e uma nova implantação, no Ubuntu:
+
+```bash
+# Conferir que a API-only entrypoint não atende a SPA.
+curl -i http://127.0.0.1:8082/
+# Deve retornar HTTP 404.
+cloudflared tunnel --url http://127.0.0.1:8082
+```
+
+Compartilhar a URL HTTPS gerada com o caminho completo `/api/v1/...`.
+A raiz, rotas do frontend, healthchecks e versões não configuradas retornam
+404 nessa entrada. O serviço HTTP da API permanece no backend:3000 dentro
+do Docker. Não publicar diretamente a porta 3000.
+
+Quick Tunnel fornece um hostname temporário sem domínio próprio. O processo
+deve permanecer ativo; recriá-lo muda a URL. Isso atende desenvolvimento e
+demonstrações, não configura um endereço estável de produção. Para uso contínuo,
+preparar domínio e túnel nomeado. Não versionar URLs temporárias como destino
+definitivo da aplicação.
+
+O frontend público será hospedado no Vercel. O frontend Docker desta entrega
+continua disponível para a suíte smoke interna e não é publicado pelo túnel
+da API. Remover esse container exige adaptar separadamente o manifesto e E2E.
+
+Para chamadas diretas do navegador à API, configurar `DEV_CORS_ORIGINS`
+no arquivo do host com as origens exatas autorizadas, separadas por vírgula.
+Exemplo: `http://localhost:5173,https://PROJETO.vercel.app`, substituindo o
+placeholder pelo domínio real. Origem não inclui caminho nem barra final.
+Não permitir indiscriminadamente todos os previews Vercel.
+
+O backend atual usa refresh cookie HttpOnly com SameSite=Lax. Para manter
+as chamadas do navegador na mesma origem, a opção recomendada é um rewrite
+do Vercel para a API externa, preservando `/api/v1/...`. O proxy do Vite é
+somente para desenvolvimento e não é utilizado pelo build no Vercel.
+Com destino HTTPS, configurar `COOKIE_SECURE=true` no host e executar novo
+deploy. Validar login/cookies quando a integração funcional estiver disponível.
+Chamadas diretas entre domínios diferentes exigem revisão específica de
+SameSite, CSRF e comportamento de cookies do navegador; somente CORS não resolve.
+
+Antes de configurar o rewrite definitivo, obter a URL atual do túnel e o
+domínio do projeto Vercel. Nunca colocar tokens de autenticação em variáveis
+`VITE_*`, pois elas são públicas no build.
+
 ## Runner e permissões
 
 Registre um runner Linux x64 com label `pastoral-dev`, como serviço sob o usuário
