@@ -18,4 +18,8 @@ esac
 export DATABASE_URL="postgresql://${POSTGRES_USER}:${postgres_password}@${POSTGRES_HOST}:5432/${POSTGRES_DB}?schema=public"
 export REDIS_URL="redis://:${redis_password}@${REDIS_HOST}:6379/0"
 
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
 exec node dist/main.js
+

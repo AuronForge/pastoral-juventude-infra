@@ -2,6 +2,12 @@
 
 Infraestrutura Docker Compose do MVP da Pastoral da Juventude.
 
+## Ambiente de desenvolvimento
+
+A esteira CI/CD da `develop`, o runner Ubuntu, os secrets, o primeiro deploy,
+os testes E2E e o rollback estão em [docs/DESENVOLVIMENTO.md](docs/DESENVOLVIMENTO.md).
+O ambiente usa `compose.development.yaml`, com recursos próprios e imagens por SHA.
+
 ## Visão geral
 
 - publicação HTTPS por Tailscale Funnel;
