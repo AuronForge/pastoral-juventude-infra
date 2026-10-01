@@ -1,7 +1,7 @@
 http:
   routers:
     backend-public-health-v1:
-      entryPoints: [api-public]
+      entryPoints: [web, api-public]
       rule: Path(`/api/v1/health`)
       priority: 200
       middlewares: [security-headers, public-health-path, public-health-no-cache]
@@ -37,11 +37,11 @@ http:
         referrerPolicy: strict-origin-when-cross-origin
 
   services:
-    # Readiness must remain reachable when the application pool is unhealthy.
+    # The report must remain reachable when the application pool is unhealthy.
     backend-health:
       loadBalancer:
         servers:
-          - url: http://backend:3000
+          - url: http://health-report:8080
 
     backend:
       loadBalancer:
@@ -60,3 +60,4 @@ http:
           timeout: 5s
         servers:
           - url: http://frontend:8080
+
