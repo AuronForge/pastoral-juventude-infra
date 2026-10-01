@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only diagnostics on the Ubuntu Docker host; never an HTTP endpoint."""
+"""Read-only diagnostics collected on the Ubuntu Docker host."""
 import json
 import os
 from pathlib import Path
@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
 
 SERVICES = ('backend', 'postgres', 'redis', 'traefik', 'frontend')
 
@@ -41,7 +42,8 @@ def collect(root=Path('/opt/pastoral/dev')):
                           'uptimeSeconds': float(Path('/proc/uptime').read_text().split()[0])}
     except (OSError, ValueError, KeyError):
         report['errors'].append('host_metrics_unavailable')
-    for service in SERVICES:
+    def collect_service(service):
+        result = {'containers': {}, 'readiness': None, 'errors': []}
         try:
             ids = run(['docker', 'ps', '-aq', '--filter', 'label=com.docker.compose.project=pastoral-dev',
                        '--filter', f'label=com.docker.compose.service={service}',
@@ -58,7 +60,7 @@ def collect(root=Path('/opt/pastoral/dev')):
                     'startedAt': state['StartedAt'],
                     'configuredMemoryLimitBytes': container['HostConfig']['Memory'],
                     'stats': None}
-            report['containers'][service] = item
+            result['containers'][service] = item
             if state['Running']:
                 stats = json.loads(run(['docker', 'stats', '--no-stream',
                                         '--format', '{{json .}}', ids[0]]))
@@ -66,10 +68,18 @@ def collect(root=Path('/opt/pastoral/dev')):
                                  ('CPUPerc', 'MemUsage', 'MemPerc', 'PIDs', 'BlockIO', 'NetIO')}
             if service == 'backend' and state['Running']:
                 probe = "const r=await fetch('http://127.0.0.1:3000/health/ready',{signal:AbortSignal.timeout(4000)}); console.log(JSON.stringify({httpStatus:r.status,body:await r.json()}));"
-                report['readiness'] = json.loads(run(['docker', 'exec', ids[0], 'node',
+                result['readiness'] = json.loads(run(['docker', 'exec', ids[0], 'node',
                                                      '--input-type=module', '-e', probe]))
         except (OSError, ValueError, KeyError, subprocess.SubprocessError):
-            report['errors'].append(f'{service}_diagnostics_unavailable')
+            result['errors'].append(f'{service}_diagnostics_unavailable')
+        return result
+
+    with ThreadPoolExecutor(max_workers=len(SERVICES)) as executor:
+        for result in executor.map(collect_service, SERVICES):
+            report['containers'].update(result['containers'])
+            report['errors'].extend(result['errors'])
+            if result['readiness'] is not None:
+                report['readiness'] = result['readiness']
     healthy = (report['readiness'] is not None and report['readiness']['httpStatus'] == 200
                and not report['errors'] and all(
                    item['status'] == 'running' and item['health'] != 'unhealthy'
@@ -89,3 +99,4 @@ if __name__ == '__main__':
     result = collect()
     print(json.dumps(result, indent=2))
     sys.exit(0 if result['status'] == 'ok' else 1)
+
