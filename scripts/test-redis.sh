@@ -21,6 +21,8 @@ cleanup() {
 trap cleanup EXIT
 
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 90 redis
+# Expand these variables inside the container, not on the CI host.
+# shellcheck disable=SC2016
 "${compose[@]}" exec -T redis sh -ec '
   redis_uid=$(id -u redis)
   test "$(stat -c %a /tmp/pastoral-redis.conf)" = 600
@@ -33,6 +35,8 @@ trap cleanup EXIT
 # A restart also must regenerate and read the private config successfully.
 "${compose[@]}" restart redis
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 90 redis
+# Expand these variables inside the container, not on the CI host.
+# shellcheck disable=SC2016
 "${compose[@]}" exec -T redis sh -ec '
   REDISCLI_AUTH=$(cat /run/secrets/redis_password) redis-cli ping | grep -qx PONG
 '
