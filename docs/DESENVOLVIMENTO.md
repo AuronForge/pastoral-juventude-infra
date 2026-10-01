@@ -48,6 +48,33 @@ O acesso inicial fica em `http://localhost:8080`. Para acessar pela LAN, defina
 Se habilitar HTTPS posteriormente, configure `COOKIE_SECURE=true`.
 Os bancos e rotas técnicas permanecem internos; `/api/*` e `/` passam pelo Traefik.
 
+## Versionamento no Traefik
+
+O gateway tem um router explícito `backend-api-v1`, com regra
+`Path("/api/v1") || PathPrefix("/api/v1/")`, nos arquivos
+`traefik/dynamic.development.yml` e `traefik/dynamic.yml`.
+A versão faz parte do contrato de entrada do gateway e o caminho completo
+é preservado até o backend; não há StripPrefix nem reescrita de versão.
+
+Somente v1 está habilitada hoje. `/api`, `/api/v2/...`, `/api/v10/...`
+e versões não declaradas retornam HTTP 404 do Traefik. O router do frontend
+exclui `/api` e `/api/...`, impedindo que a SPA responda a uma API desconhecida.
+`/api/v10` não corresponde a v1.
+
+Para habilitar v2, implementar e testar primeiro o contrato no backend.
+Adicionar depois um router `backend-api-v2` com regra
+`Path("/api/v2") || PathPrefix("/api/v2/")`, prioridade e middlewares explícitos.
+Ele pode apontar para o mesmo serviço se a API implementar ambas as versões,
+ou para um serviço/container específico da v2. Não publicar uma rota v2 que
+apenas entregue o contrato v1. Repetir o procedimento para cada versão aprovada.
+
+A CI executa Traefik real com serviços HTTP de teste para verificar v1,
+preservação de caminho/query, rejeição de versões ausentes e roteamento web.
+Esse teste não substitui os testes dos contratos da API.
+Após merge na infra, aguardar sua CI e solicitar um novo deploy de desenvolvimento
+com o HEAD publicado de um componente. Alterações somente na infra não são
+disparadas pelos workflows de publicação de backend/frontend.
+
 ## Runner e permissões
 
 Registre um runner Linux x64 com label `pastoral-dev`, como serviço sob o usuário
