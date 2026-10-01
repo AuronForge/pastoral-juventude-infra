@@ -1,15 +1,15 @@
 http:
   routers:
-    backend-api:
+    backend-api-v1:
       entryPoints: [web]
-      rule: PathPrefix(`/api`)
+      rule: Path(`/api/v1`) || PathPrefix(`/api/v1/`)
       priority: 100
       middlewares: [security-headers]
       service: backend
 
     frontend:
       entryPoints: [web]
-      rule: PathPrefix(`/`)
+      rule: PathPrefix(`/`) && !(Path(`/api`) || PathPrefix(`/api/`))
       priority: 1
       middlewares: [security-headers]
       service: frontend
