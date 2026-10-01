@@ -90,3 +90,10 @@ jobs:
 
       - name: Test archived Desktop retry safety
         run: python3 scripts/test-desktop-retry.py
+
+
+      - name: Test public resource health report
+        run: |
+          node --test docker/health-report/server.test.mjs
+          python3 scripts/test-publish-health-report.py
+          python3 scripts/test-health-report-container.py

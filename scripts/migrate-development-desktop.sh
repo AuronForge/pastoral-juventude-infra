@@ -41,7 +41,7 @@ metadata="$root/reports/$(basename "$release")/deployment.txt"
 e2e_sha="$(sed -n 's/^e2e=//p' "$metadata")"
 [[ "$e2e_sha" =~ ^[0-9a-f]{40}$ ]]
 e2e_image="pastoral-dev-e2e:$e2e_sha"
-images=("$BACKEND_IMAGE" "$MIGRATION_IMAGE" "$FRONTEND_IMAGE" traefik:v3.7.13 postgres:17.11-alpine pastoral-redis:8.6.6-1 "$e2e_image")
+images=("$BACKEND_IMAGE" "$MIGRATION_IMAGE" "$FRONTEND_IMAGE" traefik:v3.7.13 postgres:17.11-alpine pastoral-redis:8.6.6-1 pastoral-health-report:1 "$e2e_image")
 for image in "${images[@]}"; do src image inspect "$image" >/dev/null; done
 echo 'Preflight passed: distinct daemons, readable secrets, source images/volumes, clean target.'
 [[ "$mode" == migrate ]] || exit 0
@@ -87,7 +87,8 @@ done
 target_started=true
 # Quarantine host ports until the smoke succeeds; public tunnel cannot write to the candidate.
 DEV_BIND_ADDRESS=127.0.0.1 DEV_HTTP_PORT=18081 DEV_API_TUNNEL_PORT=18082 \
-  "${target_compose[@]}" up -d --wait --wait-timeout 180 postgres redis backend frontend traefik
+  "${target_compose[@]}" up -d --wait --wait-timeout 180 postgres redis backend frontend health-report traefik
+DOCKER_HOST="$target" python3 "$repo/scripts/publish-health-report.py"
 DOCKER_HOST="$target" bash "$repo/scripts/run-development-e2e.sh" "$e2e_image" "$root/reports/$id"
 # Switch subsequent workflow logins/deploys/diagnostics only after successful smoke.
 printf 'DEV_RUNTIME_VOLUME=%s\n' "$DEV_RUNTIME_VOLUME" > "$release/desktop-runtime.env"
@@ -99,3 +100,4 @@ trap - EXIT
 "${target_compose[@]}" up -d --wait --wait-timeout 180 traefik
 curl --fail --silent --show-error "http://127.0.0.1:${DEV_API_TUNNEL_PORT:-8082}/api/v1/health" > "$root/reports/$id/public-health.json"
 echo "Migration passed; pastoral-dev is now visible in Docker Desktop. Evidence: $root/reports/$id"
+
