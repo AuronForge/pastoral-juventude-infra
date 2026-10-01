@@ -11,13 +11,15 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
+HEALTHY = threading.Event()
+HEALTHY.set()
 
 
 def stub(identity):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             body = f"{identity} {self.path}".encode()
-            self.send_response(200)
+            self.send_response(503 if identity == "backend" and self.path == "/health/ready" and not HEALTHY.is_set() else 200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -94,12 +96,18 @@ def check_config(path, backend_port, frontend_port):
                     assert response[0] == 404, url
             if path.name == "dynamic.development.yml":
                 assert request(api_port, "/api/v1/health") == (
-                    200, "backend /health/live"), "public health path"
+                    200, "backend /health/ready"), "public health path"
                 with urlopen(f"http://127.0.0.1:{api_port}/api/v1/health",
                              timeout=2) as response:
                     assert response.headers.get("Cache-Control") == "no-store"
                 assert request(api_port, "/api/v1/health/extra") == (
                     200, "backend /api/v1/health/extra"), "exact health matcher"
+                HEALTHY.clear()
+                try:
+                    assert request(api_port, "/api/v1/health") == (
+                        503, "backend /health/ready"), "dependency failure visible"
+                finally:
+                    HEALTHY.set()
             print(f"{path.name}: version routing and public health isolation passed")
         except Exception:
             subprocess.run(["docker", "logs", container], check=False)
