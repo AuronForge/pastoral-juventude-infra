@@ -33,6 +33,28 @@ services:
     ports:
       - ${DEV_BIND_ADDRESS:-127.0.0.1}:${DEV_HTTP_PORT:-8080}:80
       - 127.0.0.1:${DEV_API_TUNNEL_PORT:-8082}:8082
+  health-report:
+    restart: unless-stopped
+    security_opt: *id001
+    logging: *id002
+    build:
+      context: .
+      dockerfile: docker/health-report/Dockerfile
+    image: pastoral-health-report:1
+    read_only: true
+    environment:
+      BACKEND_HEALTH_URL: http://backend:3000/health/ready
+      HEALTH_REPORT_MAX_AGE_SECONDS: "180"
+    volumes:
+      - health-report-data:/data:ro
+    networks:
+      - app
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
   frontend:
     restart: unless-stopped
     security_opt: *id001
@@ -185,6 +207,7 @@ networks:
 volumes:
   postgres-data: {}
   redis-data: {}
+  health-report-data: {}
 secrets:
   postgres_password:
     file: ${SECRETS_DIR:-/opt/pastoral/dev/secrets}/postgres_password
@@ -194,3 +217,4 @@ secrets:
     file: ${SECRETS_DIR:-/opt/pastoral/dev/secrets}/jwt_private_key.pem
   jwt_public_key:
     file: ${SECRETS_DIR:-/opt/pastoral/dev/secrets}/jwt_public_key.pem
+
