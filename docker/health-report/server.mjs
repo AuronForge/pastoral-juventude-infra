@@ -26,7 +26,9 @@ export function createHealthServer({
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
     const send = (code, body) => { response.writeHead(code); response.end(JSON.stringify(body)); };
-    const path = new URL(request.url, 'http://localhost').pathname;
+    let path;
+    try { path = new URL(request.url, 'http://localhost').pathname; }
+    catch { return send(400, { status: 'error' }); }
     if (request.method !== 'GET') {
       response.setHeader('Allow', 'GET');
       return send(405, { status: 'error' });
