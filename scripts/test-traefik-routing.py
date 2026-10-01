@@ -49,6 +49,7 @@ def check_config(path, backend_port, frontend_port):
         config.write_text(
             path.read_text()
             .replace("http://backend:3000", f"http://127.0.0.1:{backend_port}")
+            .replace("http://health-report:8080", f"http://127.0.0.1:{backend_port}")
             .replace("http://frontend:8080", f"http://127.0.0.1:{frontend_port}")
         )
         # Use an available local port in this isolated GitHub-hosted test.
@@ -149,7 +150,8 @@ def check_desktop_runtime(backend_port, frontend_port):
             (stage / "traefik/dynamic.development.yml").write_text(
                 (ROOT / "traefik/dynamic.development.yml").read_text()
                 .replace("http://backend:3000", f"http://127.0.0.1:{backend_port}")
-                .replace("http://frontend:8080", f"http://127.0.0.1:{frontend_port}"))
+                .replace("http://health-report:8080", f"http://127.0.0.1:{backend_port}")
+            .replace("http://frontend:8080", f"http://127.0.0.1:{frontend_port}"))
             for name in ("postgres_password", "redis_password",
                          "jwt_private_key.pem", "jwt_public_key.pem"):
                 (stage / "secrets" / name).write_text("fixture-only")
@@ -204,3 +206,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
