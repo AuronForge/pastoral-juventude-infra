@@ -3,7 +3,6 @@ services:
   traefik:
     command:
       - --configFile=/etc/pastoral/traefik/traefik.yml
-      - --providers.file.directory=/etc/pastoral/traefik/dynamic
     volumes: !override
       - runtime:/etc/pastoral:ro
   backend:
