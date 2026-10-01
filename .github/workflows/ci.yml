@@ -87,3 +87,6 @@ jobs:
 
       - name: Test development diagnostics
         run: python3 scripts/test-health-development.py
+
+      - name: Test archived Desktop retry safety
+        run: python3 scripts/test-desktop-retry.py

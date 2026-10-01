@@ -2,6 +2,9 @@
 """Exercise the actual Traefik version routers against local HTTP stubs."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
+import shutil
+import uuid
 import socket
 import subprocess
 import tempfile
@@ -117,12 +120,83 @@ def check_config(path, backend_port, frontend_port):
                            check=False, stdout=subprocess.DEVNULL)
 
 
+def check_desktop_runtime(backend_port, frontend_port):
+    """Load the actual Desktop static config/command from the runtime volume."""
+    volume = "pastoral-dev_runtime-routing-" + uuid.uuid4().hex
+    secrets_volume = "pastoral-dev_runtime-secrets"
+    if subprocess.run(["docker", "volume", "inspect", secrets_volume],
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        raise AssertionError("Refusing to touch existing development secrets")
+    container = None
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            (stage / "scripts").mkdir()
+            (stage / "traefik").mkdir()
+            (stage / "secrets").mkdir()
+            shutil.copyfile(ROOT / "scripts/backend-entrypoint.sh",
+                            stage / "scripts/backend-entrypoint.sh")
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                api_port = sock.getsockname()[1]
+            (stage / "traefik/traefik.yml").write_text(
+                (ROOT / "traefik/traefik.yml").read_text()
+                .replace("address: :80\n", f"address: :{port}\n")
+                .replace("address: :8082\n", f"address: :{api_port}\n"))
+            (stage / "traefik/dynamic.development.yml").write_text(
+                (ROOT / "traefik/dynamic.development.yml").read_text()
+                .replace("http://backend:3000", f"http://127.0.0.1:{backend_port}")
+                .replace("http://frontend:8080", f"http://127.0.0.1:{frontend_port}"))
+            for name in ("postgres_password", "redis_password",
+                         "jwt_private_key.pem", "jwt_public_key.pem"):
+                (stage / "secrets" / name).write_text("fixture-only")
+            subprocess.run(["bash", str(ROOT / "scripts/sync-development-runtime.sh"),
+                            str(stage), volume, str(stage / "secrets")], check=True)
+            # Exercise the command defined by the real overlay, not a CLI-only test.
+            flags = re.findall(r"^\s+- (--.+)$",
+                               (ROOT / "compose.development.desktop.yaml").read_text(),
+                               re.MULTILINE)
+            container = subprocess.check_output([
+                "docker", "run", "--detach", "--network", "host",
+                "--mount", f"type=volume,src={volume},dst=/etc/pastoral,readonly",
+                "traefik:v3.7.13", *flags], text=True).strip()
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    if request(port, "/") == (200, "frontend /"):
+                        break
+                except (URLError, TimeoutError, ConnectionError):
+                    pass
+                if time.monotonic() >= deadline:
+                    raise AssertionError("Desktop runtime did not load frontend router")
+                time.sleep(0.25)
+            assert request(port, "/login") == (200, "frontend /login")
+            assert request(api_port, "/api/v1/pessoas") == (200, "backend /api/v1/pessoas")
+            assert request(api_port, "/api/v1/health") == (200, "backend /health/ready")
+            assert request(api_port, "/")[0] == 404
+            print("Desktop runtime: static config, frontend and API routing passed")
+    except Exception:
+        if container:
+            subprocess.run(["docker", "logs", container], check=False)
+        raise
+    finally:
+        if container:
+            subprocess.run(["docker", "rm", "--force", container],
+                           check=False, stdout=subprocess.DEVNULL)
+        subprocess.run(["docker", "volume", "rm", volume, secrets_volume],
+                       check=False, stdout=subprocess.DEVNULL)
+
+
 def main():
     backend, frontend = stub("backend"), stub("frontend")
     try:
         for filename in ("dynamic.development.yml", "dynamic.yml"):
             check_config(ROOT / "traefik" / filename,
                          backend.server_port, frontend.server_port)
+        check_desktop_runtime(backend.server_port, frontend.server_port)
     finally:
         backend.shutdown()
         frontend.shutdown()

@@ -81,7 +81,22 @@ O script mantém o mesmo lock do deploy e:
 Antes do ponto de transferência, uma falha tenta parar o destino e reiniciar
 a origem. Verificar que essa recuperação passou; não há garantia caso o daemon
 de origem falhe. Backups e volumes do destino são mantidos para investigação.
-Uma nova tentativa recusa volumes existentes: não excluir dados sem avaliá-los.
+Uma nova tentativa recusa volumes existentes. Para a falha anterior ao ponto
+de transferência, depois de corrigir o código e implantar no Engine:
+
+```bash
+sudo -u pastoral-runner bash /opt/pastoral/dev/current/scripts/prepare-desktop-retry.sh unix:///home/eduardo-marques-server/.docker/desktop/docker.sock
+```
+
+O preparo recusa execução se docker-host já apontar ao Desktop, se o backend
+de origem não estiver pronto ou se qualquer container da candidata estiver
+em execução. Arquiva os dois volumes da candidata parada em backups privados,
+e só então remove os containers parados do projeto e esses volumes **no
+Desktop**, liberando os nomes para nova migração. Mantém o Engine e seus
+volumes, runtime/secrets do Desktop e todas as imagens. Não é um procedimento
+para apagar uma implantação Desktop já aceita ou dados recebidos após cutover.
+Após sucesso, repetir check e migrate. Avaliar os arquivos de backup antes
+de qualquer limpeza posterior.
 
 Após esse ponto não há retorno automático para dados antigos. Se publicar
 as portas falhar, corrigir o destino; o arquivo docker-host já aponta para ele.
