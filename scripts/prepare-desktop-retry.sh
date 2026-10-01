@@ -17,7 +17,9 @@ dst() { docker --host "$target" "$@"; }
 source_backend="$(src ps -q --filter label=com.docker.compose.project=pastoral-dev --filter label=com.docker.compose.service=backend)"
 [[ -n "$source_backend" && "$source_backend" != *$'\n'* ]]
 src exec "$source_backend" node -e "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
-mapfile -t containers < <(dst ps -aq --filter label=com.docker.compose.project=pastoral-dev)
+candidate_ids="$(dst ps -aq --filter label=com.docker.compose.project=pastoral-dev)"
+containers=()
+if [[ -n "$candidate_ids" ]]; then mapfile -t containers <<< "$candidate_ids"; fi
 for container in "${containers[@]}"; do
   [[ "$(dst inspect --format '{{.State.Running}}' "$container")" == false ]] || {
     echo 'A candidate container is running; refusing cleanup.' >&2; exit 1;
