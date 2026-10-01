@@ -64,3 +64,6 @@ jobs:
 
       - name: Build custom images
         run: docker compose build redis postgres-backup
+
+      - name: Test Redis startup and authentication
+        run: bash scripts/test-redis.sh

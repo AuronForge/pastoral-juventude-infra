@@ -145,6 +145,31 @@ O Prisma não desfaz migrations por esse procedimento. Restaurar um dump exige
 manutenção, interrupção do backend, banco de destino controlado e validação;
 consulte `OPERACAO.md`. Não execute `down -v` nem remova volumes para corrigir deploy.
 
+## Redis unhealthy no primeiro deploy
+
+O Redis inicia como usuário `redis`. A configuração gerada em
+`/tmp/pastoral-redis.conf` contém a senha e deve ter modo `0600` e pertencer a
+esse usuário antes de o entrypoint oficial reduzir os privilégios. Uma
+configuração `root:root` com modo `0600` impede o processo de abrir o arquivo.
+
+A CI sobe somente o Redis em um projeto isolado, verifica healthcheck,
+autenticação obrigatória, proprietário/modo do arquivo, processo sem root e
+reinício. Os volumes descartáveis desse teste são removidos; os volumes do host
+de desenvolvimento são preservados.
+
+Para diagnosticar no Ubuntu sem exibir os secrets:
+
+```bash
+sudo -u pastoral-runner docker logs --tail 80 pastoral-dev-redis-1
+sudo -u pastoral-runner docker inspect --format '{{json .State.Health}}' pastoral-dev-redis-1
+```
+
+Após o merge de uma correção na infra, aguarde a CI da `develop` e inicie
+**uma nova execução** de `Deploy development` nessa branch. Reexecutar o job
+antigo continua usando o SHA antigo da infra. Use o mesmo SHA publicado da
+aplicação se ele ainda for o HEAD da `develop`. Não remova os volumes para
+recuperar o deploy.
+
 ## Validação desta entrega
 
 As verificações locais cobrem sintaxe Bash/SH e estrutura YAML. As validações
