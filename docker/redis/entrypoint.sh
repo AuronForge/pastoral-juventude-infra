@@ -9,6 +9,8 @@ case "$password" in
     ;;
 esac
 
+# Recreate rather than truncate a redis-owned file in sticky /tmp on restart.
+rm -f /tmp/pastoral-redis.conf
 umask 077
 cat > /tmp/pastoral-redis.conf <<EOF
 bind 0.0.0.0
