@@ -1,5 +1,12 @@
 http:
   routers:
+    backend-public-health-v1:
+      entryPoints: [api-public]
+      rule: Path(`/api/v1/health`)
+      priority: 200
+      middlewares: [security-headers, public-health-path, public-health-no-cache]
+      service: backend
+
     backend-api-v1:
       entryPoints: [web, api-public]
       rule: Path(`/api/v1`) || PathPrefix(`/api/v1/`)
@@ -15,6 +22,14 @@ http:
       service: frontend
 
   middlewares:
+    public-health-path:
+      replacePath:
+        path: /health/live
+    public-health-no-cache:
+      headers:
+        customResponseHeaders:
+          Cache-Control: no-store
+
     security-headers:
       headers:
         contentTypeNosniff: true
