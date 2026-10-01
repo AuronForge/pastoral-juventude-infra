@@ -87,10 +87,10 @@ DEV_BIND_ADDRESS=127.0.0.1 DEV_HTTP_PORT=18081 DEV_API_TUNNEL_PORT=18082 \
   "${target_compose[@]}" up -d --wait --wait-timeout 180 postgres redis backend frontend traefik
 DOCKER_HOST="$target" bash "$repo/scripts/run-development-e2e.sh" "$e2e_image" "$root/reports/$id"
 # Switch subsequent workflow logins/deploys/diagnostics only after successful smoke.
-printf '%s\n' "$target" > "$root/docker-host.tmp"
-mv "$root/docker-host.tmp" "$root/docker-host"
 printf 'DEV_RUNTIME_VOLUME=%s\n' "$DEV_RUNTIME_VOLUME" > "$release/desktop-runtime.env"
 printf 'source=%s\ntarget=%s\nbackup=%s\ne2e=%s\n' "$source_host" "$target" "$backup" "$e2e_sha" > "$root/reports/$id/migration.txt"
+printf '%s\n' "$target" > "$root/docker-host.tmp"
+mv "$root/docker-host.tmp" "$root/docker-host"
 # From this commit point, source data is stale; do not automatically roll it back.
 trap - EXIT
 "${target_compose[@]}" up -d --wait --wait-timeout 180 traefik
