@@ -128,29 +128,73 @@ domínio do projeto Vercel. Nunca colocar tokens de autenticação em variáveis
 ## Healthcheck público da API
 
 Na entrada exclusiva do túnel, `GET /api/v1/health` usa o router
-`backend-public-health-v1` com prioridade 200 e reescrita exata para
-`/health/live` no backend. O caminho externo permanece versionado.
-A resposta saudável é HTTP 200 com `{"status":"ok"}` e
-`Cache-Control: no-store`. Não requer autenticação nem expõe o estado
-individual de PostgreSQL/Redis.
+`backend-public-health-v1`, prioridade 200, reescrita exata para
+`/health/ready` e `Cache-Control: no-store`. O caminho externo permanece
+versionado. A resposta saudável é HTTP 200:
 
-Após novo deploy:
+```json
+{"status":"ok","checks":{"database":"up","cache":"up"}}
+```
+
+Quando PostgreSQL ou Redis falha, retorna HTTP 503 com `status: error` e
+o componente em `down`. O serviço `backend-health` não usa o healthcheck
+do pool da aplicação: permite receber o diagnóstico mesmo quando o pool
+`backend` foi removido pelo Traefik. As outras rotas continuam usando
+o pool com readiness. Backend inacessível pode gerar 502; o endpoint
+não pode diagnosticar dependências se o próprio backend não responde.
 
 ```bash
 curl -i http://127.0.0.1:8082/api/v1/health
-# Externamente: substituir pela URL atual gerada pelo cloudflared.
 curl -i https://URL-ATUAL.trycloudflare.com/api/v1/health
 ```
 
-`/health/live` e `/health/ready` continuam sem roteamento público.
-O readiness permanece sendo usado internamente pelo Traefik e pelo E2E.
-O serviço do router público também está sujeito ao healthcheck interno
-do load balancer: se não houver backend saudável disponível, o gateway
-pode responder 503 mesmo com o processo vivo. Uma falha de conexão do túnel
-pode gerar 502. Portanto, esse endpoint não diagnostica a causa da indisponibilidade.
+A resposta pública não contém credenciais, mensagens de exceção ou métricas
+de recursos. `/health/live`, `/health/ready` e `/metrics` permanecem internos.
+O liveness interno mantém o contrato mínimo de processo ativo. A CI usa
+Traefik real para testar a reescrita, HTTP 503, ausência de cache e isolamento.
 
-A CI executa Traefik real para comprovar a reescrita exata, ausência de cache
-e bloqueio dos caminhos internos. A validação externa exige túnel ativo.
+## Diagnóstico de recursos no Ubuntu
+
+Executar no **host Ubuntu**, com Python 3 e acesso ao Docker local, após
+o deploy da revisão que inclui o script:
+
+```bash
+sudo -u pastoral-runner python3 /opt/pastoral/dev/current/scripts/health-development.py
+```
+
+O script é somente de leitura, identifica containers pelas labels Compose
+do projeto `pastoral-dev` e produz JSON sem carregar arquivos de secrets
+ou emitir o conteúdo de `docker inspect`. Não requer variáveis de imagem
+nem publica portas. Não executar em um container ou contra um Docker remoto,
+pois as métricas de `/proc` seriam de outra máquina.
+
+| Campo | Significado |
+| --- | --- |
+| `readiness` | HTTP e corpo do backend, incluindo estado do PostgreSQL e Redis |
+| `host.memory` | RAM total, disponível, usada (total menos disponível), percentual e swap, em bytes |
+| `host.loadAverage` / `cpuCount` | Carga média em 1, 5 e 15 minutos e CPUs lógicas; carga não é percentual de CPU |
+| `host.disk` | Espaço do filesystem que contém /opt/pastoral/dev, em bytes; não é tamanho do banco |
+| `host.uptimeSeconds` | Tempo desde o boot do Ubuntu |
+| `containers.postgres.stats.MemUsage` | Memória de todo o container PostgreSQL, incluindo seus processos |
+| `containers.*.stats` | CPU, memória, processos, I/O de bloco e rede, no formato do Docker CLI |
+| `containers.*.configuredMemoryLimitBytes` | Limite explícito do container; zero significa sem limite configurado |
+| `containers.*.health` / `restartCount` / `oomKilled` | Healthcheck Docker, reinícios e estado OOM da execução atual |
+| `errors` | Coletas indisponíveis; os dados obtidos permanecem no relatório |
+
+No Linux, `docker stats` desconta cache recuperável da memória apresentada.
+`MemUsage` e `MemPerc` seguem a formatação e o denominador do Docker; um
+limite exibido pelo Docker pode refletir o host quando não há limite explícito.
+A memória de um container é diferente de seu heap ou da configuração
+`shared_buffers` do PostgreSQL. Não somar RSS dos processos PostgreSQL,
+pois regiões compartilhadas poderiam ser contadas repetidamente.
+
+Código de saída 0 significa coleta completa, containers em execução e
+readiness HTTP 200; 1 indica falha ou coleta parcial. Valores altos de memória,
+CPU ou disco são apresentados para diagnóstico e não mudam sozinhos esse
+estado: limiares/alertas de capacidade exigem observabilidade contínua.
+`oomKilled` não é um histórico completo de OOMs e `restartCount` recomeça
+ao recriar o container. Não há novo serviço de monitoramento nem alertas nesta
+entrega. Os testes do coletor simulam Docker; validar também no Ubuntu real.
 
 ## Runner e permissões
 
