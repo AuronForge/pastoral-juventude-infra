@@ -53,7 +53,10 @@ id="desktop-$(date -u +%Y%m%dT%H%M%SZ)"
 backup="$root/backups/$id"
 mkdir -p "$backup" "$root/reports/$id"
 export DEV_RUNTIME_VOLUME="pastoral-dev_runtime-$id"
-cp "$repo/compose.development.desktop.yaml" "$release/"
+# Installed scripts resolve repo/current to the same physical release.
+if [[ ! "$repo/compose.development.desktop.yaml" -ef "$release/compose.development.desktop.yaml" ]]; then
+  cp "$repo/compose.development.desktop.yaml" "$release/"
+fi
 source_compose=(docker --host "$source_host" compose -p pastoral-dev -f "$release/compose.development.yaml")
 target_compose=(docker --host "$target" compose -p pastoral-dev -f "$release/compose.development.yaml" -f "$release/compose.development.desktop.yaml")
 DOCKER_HOST="$target" bash "$repo/scripts/sync-development-runtime.sh" "$release" "$DEV_RUNTIME_VOLUME" "${SECRETS_DIR:-$root/secrets}"
