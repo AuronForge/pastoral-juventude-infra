@@ -32,6 +32,7 @@ services:
       start_period: 10s
     ports:
       - ${DEV_BIND_ADDRESS:-127.0.0.1}:${DEV_HTTP_PORT:-8080}:80
+      - 127.0.0.1:${DEV_API_TUNNEL_PORT:-8082}:8082
   frontend:
     restart: unless-stopped
     security_opt: *id001
@@ -77,7 +78,7 @@ services:
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TRUST_PROXY: "true"
-      CORS_ORIGINS: ${DEV_PUBLIC_URL:-http://localhost:8080}
+      CORS_ORIGINS: ${DEV_CORS_ORIGINS:-${DEV_PUBLIC_URL:-http://localhost:8080}}
     depends_on:
       postgres:
         condition: service_healthy
