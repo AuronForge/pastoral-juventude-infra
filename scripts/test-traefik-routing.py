@@ -92,7 +92,15 @@ def check_config(path, backend_port, frontend_port):
                     assert response == expected, url
                 else:
                     assert response[0] == 404, url
-            print(f"{path.name}: version routing and API-only isolation passed")
+            if path.name == "dynamic.development.yml":
+                assert request(api_port, "/api/v1/health") == (
+                    200, "backend /health/live"), "public health path"
+                with urlopen(f"http://127.0.0.1:{api_port}/api/v1/health",
+                             timeout=2) as response:
+                    assert response.headers.get("Cache-Control") == "no-store"
+                assert request(api_port, "/api/v1/health/extra") == (
+                    200, "backend /api/v1/health/extra"), "exact health matcher"
+            print(f"{path.name}: version routing and public health isolation passed")
         except Exception:
             subprocess.run(["docker", "logs", container], check=False)
             raise
