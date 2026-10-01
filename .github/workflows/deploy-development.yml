@@ -84,6 +84,12 @@ jobs:
           token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
           path: e2e
           persist-credentials: false
+      - name: Select development Docker daemon
+        run: |
+          source infra/scripts/development-docker.sh
+          development_docker
+          echo "DOCKER_HOST=$DOCKER_HOST" >> "$GITHUB_ENV"
+          echo "DOCKER_CONTEXT=" >> "$GITHUB_ENV"
       - name: Authenticate to GHCR
         if: vars.DEV_GHCR_PRIVATE == 'true'
         env:
