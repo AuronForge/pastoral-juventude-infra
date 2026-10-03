@@ -120,6 +120,23 @@ Exemplo: `http://localhost:5173,https://PROJETO.vercel.app`, substituindo o
 placeholder pelo domínio real. Origem não inclui caminho nem barra final.
 Não permitir indiscriminadamente todos os previews Vercel.
 
+O Compose de desenvolvimento acrescenta automaticamente `http://traefik` às
+origens configuradas: é a origem usada pelo navegador do E2E na rede Docker
+interna. Isso também é necessário para a validação de Origin da renovação de
+sessão, mesmo sem cookie. As origens públicas de `DEV_CORS_ORIGINS` (ou o
+fallback `DEV_PUBLIC_URL`) são preservadas; não há wildcard.
+Essa inclusão é exclusiva deste ambiente e não libera origens desconhecidas.
+
+Se o smoke real mostrar “Não foi possível restaurar sua sessão” e a chamada
+`POST /api/v1/autenticacao/renovar-token` retornar 403 em `http://traefik`,
+verifique se a implantação usa esta configuração. Foi o bloqueio observado
+na execução 37131928653; os testes controlados passaram porque simulam a API.
+Após o merge, aguarde a CI da infra e inicie **uma nova execução** de
+`Deploy development` em `develop`, com componente `frontend` e o SHA
+publicado atual. O deploy aplica a configuração também ao backend.
+Não é necessário editar o arquivo privado no Ubuntu nem resetar as contas.
+A validação final continua sendo o smoke real do deploy.
+
 O backend atual usa refresh cookie HttpOnly com SameSite=Lax. Para manter
 as chamadas do navegador na mesma origem, a opção recomendada é um rewrite
 do Vercel para a API externa, preservando `/api/v1/...`. O proxy do Vite é

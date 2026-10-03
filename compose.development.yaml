@@ -100,7 +100,7 @@ services:
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TRUST_PROXY: "true"
-      CORS_ORIGINS: ${DEV_CORS_ORIGINS:-${DEV_PUBLIC_URL:-http://localhost:8080}}
+      CORS_ORIGINS: "${DEV_CORS_ORIGINS:-${DEV_PUBLIC_URL:-http://localhost:8080}},http://traefik"
     depends_on:
       postgres:
         condition: service_healthy
