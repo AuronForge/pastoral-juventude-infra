@@ -46,6 +46,9 @@ jobs:
           DEV_RUNTIME_VOLUME: pastoral-dev_runtime-ci
         run: docker compose -f compose.development.yaml -f compose.development.desktop.yaml config --quiet
 
+      - name: Test internal E2E origins
+        run: python3 scripts/test-development-origins.py
+
       - name: Test automatic validated E2E selection
         run: python3 scripts/test-development-e2e.py
 
