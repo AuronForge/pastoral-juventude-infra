@@ -228,10 +228,31 @@ GitHub; somente a implantação validada usa o Ubuntu.
 | Backend/frontend | variável `DEV_AUTO_DEPLOY=true`                 | Dispatch após publicação aprovada                            |
 | Backend/frontend | secret `INFRA_DISPATCH_TOKEN`                   | Token com Actions: write somente na infra                    |
 | Infra            | variável `DEV_DEPLOY_ENABLED=true`              | Habilitar a implantação após bootstrap                       |
-| Infra            | variável `DEV_E2E_REF`                          | SHA completo aprovado deste PR E2E, após merge               |
 | Infra            | secret `SOURCE_READ_TOKEN`, quando necessário   | Contents/Actions: read nos repositórios de origem privados   |
 | Infra            | variável `DEV_GHCR_PRIVATE=true`, se necessário | Autenticar para baixar imagens privadas                      |
 | Infra            | variável `GHCR_USER` e secret `GHCR_READ_TOKEN` | Usuário/token com read:packages, sem permissão de publicação |
+
+## Seleção automática da revisão E2E
+
+Cada deploy resolve o HEAD de `develop` do repositório E2E e exige uma execução
+`CI` de evento `push`, nessa branch e nesse mesmo SHA, concluída com sucesso.
+O SHA aprovado é fixado na saída `e2e_sha` da validação e usado no checkout;
+novos merges durante a implantação não trocam os testes dessa execução.
+
+Não é necessário criar ou atualizar `DEV_E2E_REF`. Uma variável antiga com esse
+nome pode permanecer: o workflow não a utiliza. O acesso utiliza o mesmo
+`SOURCE_READ_TOKEN` já usado para ler os repositórios privados; não exige novo
+secret nem permissão de escrita.
+
+Se a CI do HEAD E2E estiver pendente, falhar ou não existir, a validação interrompe
+o deploy antes de acessar o Ubuntu. Não escolhe silenciosamente uma revisão
+anterior. Aguarde a CI e inicie uma nova execução. Uma falha de leitura da API
+também interrompe a validação. O SHA escolhido aparece no checkout do job.
+
+Depois do merge desta automação, aguardar a CI da infra e iniciar uma nova execução
+de `Deploy development` na branch `develop`, usando o SHA atual publicado do
+componente. Reexecutar um job antigo mantém o workflow antigo. Esta alteração
+não dispara um deploy nem altera os containers por si só.
 
 ## Ordem de bootstrap
 
@@ -242,7 +263,7 @@ GitHub; somente a implantação validada usa o Ubuntu.
 3. Manter `DEV_AUTO_DEPLOY` e `DEV_DEPLOY_ENABLED` desativados durante a preparação.
 4. Executar push/merge em `develop` de backend e frontend e aguardar CI/publicação.
 5. Preencher o arquivo do host com as duas imagens e migrations desse backend.
-6. Configurar runner, environment, tokens e `DEV_E2E_REF` com o SHA aprovado.
+6. Configurar runner, environment e tokens; aguardar a CI de `develop` do E2E.
 7. Habilitar `DEV_DEPLOY_ENABLED`; executar `Deploy development` na branch `develop`
    informando componente e SHA publicado. A CI da infra nesse SHA também deve ter passado.
 8. Conferir containers, frontend pela URL configurada, backup e artefatos E2E.
@@ -397,3 +418,4 @@ Validação: testes Node do contrato HTTP e falhas; testes Python do coletor e
 publicador; CI com imagem real, volume gravado atomicamente e leitura por UID
 1001, além dos testes de roteamento Traefik e runtime Desktop. A instalação do
 timer e o retorno público no Ubuntu requerem validação operacional após merge.
+

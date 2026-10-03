@@ -18,8 +18,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck jq
 
       - name: Prepare validation environment
         run: |
@@ -45,6 +45,9 @@ jobs:
           FRONTEND_IMAGE: ghcr.io/auronforge/pastoral-juventude-frontend:dev-ci
           DEV_RUNTIME_VOLUME: pastoral-dev_runtime-ci
         run: docker compose -f compose.development.yaml -f compose.development.desktop.yaml config --quiet
+
+      - name: Test automatic validated E2E selection
+        run: python3 scripts/test-development-e2e.py
 
       - name: Test explicit daemon selection
         run: bash scripts/test-development-docker.sh
