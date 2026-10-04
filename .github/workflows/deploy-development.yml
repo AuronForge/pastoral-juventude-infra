@@ -28,6 +28,8 @@ jobs:
     timeout-minutes: 10
     outputs:
       e2e_sha: ${{ steps.validate.outputs.e2e_sha }}
+      backend_sha: ${{ steps.validate.outputs.backend_sha }}
+      frontend_sha: ${{ steps.validate.outputs.frontend_sha }}
     steps:
       - name: Validate revision and successful workflows
         id: validate
@@ -61,12 +63,32 @@ jobs:
             sleep 5
           done
           [[ "$published" == true ]]
+          other_component=frontend
+          [[ "$COMPONENT" != frontend ]] || other_component=backend
+          other_repo="AuronForge/pastoral-juventude-$other_component"
+          other_sha="$(gh api "repos/$other_repo/branches/develop" --jq '.commit.sha')"
+          [[ "$other_sha" =~ ^[0-9a-f]{40}$ ]]
+          pair_ready=false
+          for attempt in {1..60}; do
+            if check_run "$other_repo" "$other_sha" CI push &&
+              gh api "repos/$other_repo/actions/runs?event=workflow_run&per_page=100" \
+                --jq ".workflow_runs | any(.path == \".github/workflows/publish-development.yml\" and .display_title == \"Publish development $other_sha\" and .conclusion == \"success\")" | grep -qx true; then
+              pair_ready=true
+              break
+            fi
+            sleep 5
+          done
+          [[ "$pair_ready" == true ]] || { echo 'Both application develop revisions must have successful CI and published images; wait for publication before retrying.'; exit 1; }
+          [[ "$(gh api "repos/$source_repo/branches/develop" --jq '.commit.sha')" == "$SOURCE_SHA" ]]
+          [[ "$(gh api "repos/$other_repo/branches/develop" --jq '.commit.sha')" == "$other_sha" ]] || { echo 'Application pair changed during validation; retry the current revisions.'; exit 1; }
           check_run AuronForge/pastoral-juventude-infra "$INFRA_SHA" CI push
           e2e_repo=AuronForge/pastoral-juventude-e2e
           E2E_SHA="$(gh api "repos/$e2e_repo/branches/develop" --jq '.commit.sha')"
           [[ "$E2E_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid E2E develop revision.'; exit 1; }
           check_run "$e2e_repo" "$E2E_SHA" CI push || { echo 'E2E develop HEAD has no successful push CI; wait for its CI before deploying.'; exit 1; }
           echo "e2e_sha=$E2E_SHA" >> "$GITHUB_OUTPUT"
+          echo "${COMPONENT}_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "${other_component}_sha=$other_sha" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: validate
@@ -105,6 +127,8 @@ jobs:
         env:
           COMPONENT: ${{ inputs.component }}
           SOURCE_SHA: ${{ inputs.commit_sha }}
+          VALIDATED_BACKEND_SHA: ${{ needs.validate.outputs.backend_sha }}
+          VALIDATED_FRONTEND_SHA: ${{ needs.validate.outputs.frontend_sha }}
         run: bash infra/scripts/deploy-development.sh "$COMPONENT" "$SOURCE_SHA" "$GITHUB_WORKSPACE/e2e"
       - name: Publish deployment evidence
         if: ${{ !cancelled() && steps.deploy.outputs.report_dir != '' }}
@@ -116,4 +140,3 @@ jobs:
       - name: Remove registry session
         if: ${{ always() && vars.DEV_GHCR_PRIVATE == 'true' }}
         run: docker logout ghcr.io
-

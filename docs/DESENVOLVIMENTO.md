@@ -436,3 +436,27 @@ publicador; CI com imagem real, volume gravado atomicamente e leitura por UID
 1001, além dos testes de roteamento Traefik e runtime Desktop. A instalação do
 timer e o retorno público no Ubuntu requerem validação operacional após merge.
 
+### Seleção conjunta das imagens de desenvolvimento
+
+O deploy automático valida o HEAD de develop de backend e frontend, exigindo
+CI de push aprovada e publicação bem-sucedida das duas imagens. Aguarda até
+60 tentativas com intervalos de cinco segundos pela publicação do outro
+componente. Se a revisão mudar ou a publicação não for aprovada, interrompe
+antes de executar o job no host. O E2E continua fixado no HEAD aprovado.
+
+As duas revisões são enviadas ao script de deploy e substituem as imagens
+anteriores juntas; a imagem de migrations corresponde ao backend selecionado.
+A chamada manual sem essas duas revisões mantém o comportamento anterior.
+Uma seleção parcial, inválida ou divergente do componente disparador é rejeitada.
+
+No incidente de 03/10/2026, a publicação do frontend falhou no smoke Vercel
+com HTTP 404 transitório e o deploy do backend executou o E2E novo contra a
+interface anterior. Para retomar, mergear primeiro esta correção de infraestrutura
+e aguardar sua CI em develop; depois mergear a correção do smoke no frontend.
+A publicação aprovada do frontend dispara o deploy automático com o par validado.
+
+Em falha de E2E, current-images.env e a referência current não são promovidos.
+Os containers podem já estar executando imagens candidatas: o script não
+realiza rollback automático. Só considerar a implantação validada após o E2E
+e a promoção das referências concluírem.
+
