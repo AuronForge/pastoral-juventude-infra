@@ -25,7 +25,17 @@ set +a
 source "$(dirname "${BASH_SOURCE[0]}")/development-docker.sh"
 development_docker
 image_prefix=ghcr.io/auronforge/pastoral-juventude
-if [[ "$component" == backend ]]; then
+if [[ -n "${VALIDATED_BACKEND_SHA:-}${VALIDATED_FRONTEND_SHA:-}" ]]; then
+  [[ "${VALIDATED_BACKEND_SHA:-}" =~ ^[0-9a-f]{40}$ && "${VALIDATED_FRONTEND_SHA:-}" =~ ^[0-9a-f]{40}$ ]]
+  if [[ "$component" == backend ]]; then
+    [[ "$commit_sha" == "$VALIDATED_BACKEND_SHA" ]]
+  else
+    [[ "$commit_sha" == "$VALIDATED_FRONTEND_SHA" ]]
+  fi
+  export BACKEND_IMAGE="$image_prefix-backend:dev-$VALIDATED_BACKEND_SHA"
+  export MIGRATION_IMAGE="$BACKEND_IMAGE-migrations"
+  export FRONTEND_IMAGE="$image_prefix-frontend:dev-$VALIDATED_FRONTEND_SHA"
+elif [[ "$component" == backend ]]; then
   export BACKEND_IMAGE="$image_prefix-backend:dev-$commit_sha"
   export MIGRATION_IMAGE="$BACKEND_IMAGE-migrations"
 else
@@ -66,7 +76,7 @@ diagnose() {
   result=$?
   if (( result != 0 )); then
     "${compose[@]}" ps > "$report_dir/compose-status.txt" 2>&1 || true
-    echo "Deploy failed. Candidate: $release_dir. Previous validated state was retained." >&2
+    echo "Deploy failed. Candidate: $release_dir. Validated release references were retained; running containers may use candidate images. No automatic rollback was performed." >&2
   fi
 }
 trap diagnose EXIT
