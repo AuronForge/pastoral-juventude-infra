@@ -1,0 +1,56 @@
+# Desktop counterpart of compose.development.observability.yaml; apply after
+# compose.development.desktop.yaml. Configuration comes from the release runtime volume.
+services:
+  prometheus:
+    command:
+      - --config.file=/etc/pastoral/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - prometheus-data:/prometheus
+  loki:
+    command: [-config.file=/etc/pastoral/loki/loki.yml]
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - loki-data:/loki
+  alloy:
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/pastoral/alloy/config.alloy
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    healthcheck:
+      test: [CMD, alloy, fmt, --test, /etc/pastoral/alloy/config.alloy]
+  # Exporters read their password from the application secrets volume (root:1001, 0440).
+  postgres-exporter:
+    entrypoint: [/bin/sh, /etc/pastoral/scripts/postgres-exporter-entrypoint.sh]
+    secrets: !reset []
+    group_add: ["1001"]
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - runtime-secrets:/run/secrets:ro
+  redis-exporter:
+    entrypoint: [/bin/sh, /etc/pastoral/scripts/redis-exporter-entrypoint.sh]
+    secrets: !reset []
+    group_add: ["1001"]
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - runtime-secrets:/run/secrets:ro
+  grafana:
+    environment:
+      GF_PATHS_PROVISIONING: /etc/pastoral/grafana/provisioning
+    secrets: !reset []
+    volumes: !override
+      - grafana-data:/var/lib/grafana
+      - runtime:/etc/pastoral:ro
+      # Holds only grafana_admin_password, owned by the Grafana UID.
+      - observability-secrets:/run/secrets:ro
+volumes:
+  observability-secrets:
+    name: pastoral-dev_observability-secrets
+    external: true

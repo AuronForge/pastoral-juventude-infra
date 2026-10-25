@@ -1,0 +1,219 @@
+# Optional overlay for pastoral-dev, enabled by DEV_OBSERVABILITY_ENABLED=true.
+# Grafana has no host port: it is reachable only through the Cloudflare quick tunnel.
+services:
+  prometheus:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    image: prom/prometheus:v3.14.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+    read_only: true
+    mem_limit: 512m
+    volumes:
+      - ./prometheus/prometheus.development.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # app reaches backend/traefik metrics; observability is reached by Grafana.
+    networks: [app, observability]
+    # Host node-exporter (outside Compose), see DESENVOLVIMENTO.md.
+    extra_hosts: [host.docker.internal:host-gateway]
+    healthcheck:
+      test: [CMD, wget, --quiet, --tries=1, --spider, http://127.0.0.1:9090/-/healthy]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  loki:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: grafana/loki:3.7.7
+    command: [-config.file=/etc/loki/loki.yml]
+    read_only: true
+    mem_limit: 512m
+    tmpfs: [/tmp]
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks: [observability]
+    healthcheck:
+      test: [CMD, /usr/bin/loki, -version]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  alloy:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: grafana/alloy:v1.19.2
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    mem_limit: 256m
+    volumes:
+      - ./alloy/config.development.alloy:/etc/alloy/config.alloy:ro
+      # Socket of the selected daemon (Engine or the Desktop VM); logs only.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    networks: [observability]
+    depends_on:
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, alloy, fmt, --test, /etc/alloy/config.alloy]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Containers of the selected daemon; host metrics come from the host node-exporter.
+  cadvisor:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: ghcr.io/google/cadvisor:v0.60.5
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+    privileged: true
+    devices: [/dev/kmsg:/dev/kmsg]
+    mem_limit: 192m
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    networks: [observability]
+    healthcheck:
+      test: [CMD, /usr/bin/healthcheck.sh]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres-exporter:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    entrypoint: [/bin/sh, /opt/pastoral/postgres-exporter-entrypoint.sh]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pastoral}
+      POSTGRES_USER: ${POSTGRES_USER:-pastoral}
+      POSTGRES_HOST: postgres
+    secrets: [postgres_password]
+    read_only: true
+    mem_limit: 64m
+    volumes:
+      - ./scripts/postgres-exporter-entrypoint.sh:/opt/pastoral/postgres-exporter-entrypoint.sh:ro
+    networks: [data, observability]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://127.0.0.1:9187/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  redis-exporter:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: oliver006/redis_exporter:v1.91.1-alpine
+    entrypoint: [/bin/sh, /opt/pastoral/redis-exporter-entrypoint.sh]
+    environment:
+      REDIS_HOST: redis
+    secrets: [redis_password]
+    read_only: true
+    mem_limit: 64m
+    volumes:
+      - ./scripts/redis-exporter-entrypoint.sh:/opt/pastoral/redis-exporter-entrypoint.sh:ro
+    networks: [data, observability]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://127.0.0.1:9121/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  grafana:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: grafana/grafana:13.2.2
+    environment:
+      GF_SECURITY_ADMIN_USER: ${DEV_GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      # Served only over the HTTPS tunnel.
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_SERVER_HTTP_PORT: "3000"
+    secrets: [grafana_admin_password]
+    mem_limit: 384m
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks: [observability]
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Quick tunnel: the *.trycloudflare.com URL changes whenever this container
+  # is recreated or restarted. Use scripts/grafana-tunnel-url.sh to read it.
+  grafana-tunnel:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: cloudflare/cloudflared:2026.9.3
+    command: [tunnel, --no-autoupdate, --url, http://grafana:3000]
+    read_only: true
+    mem_limit: 128m
+    networks: [observability, tunnel]
+    depends_on:
+      grafana:
+        condition: service_healthy
+
+networks:
+  observability:
+    internal: true
+  tunnel: {}
+
+volumes:
+  prometheus-data: {}
+  loki-data: {}
+  alloy-data: {}
+  grafana-data: {}
+
+secrets:
+  grafana_admin_password:
+    file: ${SECRETS_DIR:-/opt/pastoral/dev/secrets}/grafana_admin_password

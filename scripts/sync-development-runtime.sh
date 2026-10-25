@@ -8,8 +8,14 @@ secrets_dir="${3:?Secrets directory}"
 helper=alpine:3.22.1
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
-mkdir -p "$stage/runtime/scripts" "$stage/runtime/traefik/dynamic" "$stage/secrets"
+mkdir -p "$stage/runtime/scripts" "$stage/runtime/traefik/dynamic" "$stage/secrets" "$stage/observability-secrets"
+mkdir -p "$stage/runtime/prometheus" "$stage/runtime/loki" "$stage/runtime/alloy" "$stage/runtime/grafana"
 cp "$release/scripts/backend-entrypoint.sh" "$stage/runtime/scripts/"
+cp "$release/scripts/postgres-exporter-entrypoint.sh" "$release/scripts/redis-exporter-entrypoint.sh" "$stage/runtime/scripts/"
+cp "$release/prometheus/prometheus.development.yml" "$stage/runtime/prometheus/prometheus.yml"
+cp "$release/loki/loki.yml" "$stage/runtime/loki/"
+cp "$release/alloy/config.development.alloy" "$stage/runtime/alloy/config.alloy"
+cp -R "$release/grafana/provisioning" "$stage/runtime/grafana/"
 # Static file configuration and CLI flags are mutually exclusive in Traefik.
 sed 's#directory: /etc/traefik/dynamic#directory: /etc/pastoral/traefik/dynamic#' \
   "$release/traefik/traefik.yml" > "$stage/runtime/traefik/traefik.yml"
@@ -19,6 +25,12 @@ for secret in postgres_password redis_password jwt_private_key jwt_public_key; d
   [[ "$secret" != jwt_* ]] || source_file="$source_file.pem"
   cp "$source_file" "$stage/secrets/$secret"
 done
+# Grafana gets its own volume: it must not see the application secrets.
+observability=false
+if [[ "${DEV_OBSERVABILITY_ENABLED:-false}" == true ]]; then
+  observability=true
+  cp "$secrets_dir/grafana_admin_password" "$stage/observability-secrets/"
+fi
 # Tar extracts with daemon-local ownership; no VirtioFS/host UID mapping.
 chmod -R a+rX "$stage/runtime"
 chmod 0440 "$stage/secrets/"*
@@ -27,3 +39,8 @@ docker volume create --label com.docker.compose.project=pastoral-dev "$volume" >
 docker volume create --label com.docker.compose.project=pastoral-dev pastoral-dev_runtime-secrets >/dev/null
 tar -C "$stage/runtime" -cf - . | docker run --rm -i --network none --mount "type=volume,src=$volume,dst=/data" "$helper" tar -C /data -xf -
 tar -C "$stage/secrets" -cf - . | docker run --rm -i --network none --mount type=volume,src=pastoral-dev_runtime-secrets,dst=/data "$helper" sh -c 'tar -C /data -xf - && chown -R 0:1001 /data && chmod 0750 /data && chmod 0440 /data/*'
+if [[ "$observability" == true ]]; then
+  docker volume create --label com.docker.compose.project=pastoral-dev pastoral-dev_observability-secrets >/dev/null
+  # 472 is the UID of the official Grafana image.
+  tar -C "$stage/observability-secrets" -cf - . | docker run --rm -i --network none --mount type=volume,src=pastoral-dev_observability-secrets,dst=/data "$helper" sh -c 'tar -C /data -xf - && chown -R 472:0 /data && chmod 0500 /data && chmod 0400 /data/*'
+fi

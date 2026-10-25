@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: pastoral
+    folder: Pastoral
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      # Relative to the provisioning directory (bind mount or Desktop runtime volume).
+      path: $GF_PATHS_PROVISIONING/dashboards/pastoral
+      foldersFromFilesStructure: false

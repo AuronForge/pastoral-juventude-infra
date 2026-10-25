@@ -8,28 +8,49 @@ volume="pastoral-dev_runtime-$id"
 image="pastoral-e2e-fixture:$id"
 network_created=false
 cleanup() {
-  docker volume rm "$volume" "$volume-copy" pastoral-dev_runtime-secrets >/dev/null 2>&1 || true
+  docker volume rm "$volume" "$volume-copy" pastoral-dev_runtime-secrets pastoral-dev_observability-secrets >/dev/null 2>&1 || true
   docker image rm "$image" >/dev/null 2>&1 || true
   [[ "$network_created" != true ]] || docker network rm pastoral-dev_app >/dev/null 2>&1 || true
   rm -rf "$stage"
 }
 # This runs only on the isolated GitHub-hosted CI daemon.
-if docker volume inspect pastoral-dev_runtime-secrets >/dev/null 2>&1; then
+if docker volume inspect pastoral-dev_runtime-secrets >/dev/null 2>&1 ||
+  docker volume inspect pastoral-dev_observability-secrets >/dev/null 2>&1; then
   echo 'Refusing to use an existing development secrets volume in this test.' >&2
   exit 1
 fi
 trap cleanup EXIT
-mkdir -p "$stage/release/scripts" "$stage/release/traefik" "$stage/secrets"
-cp "$repo/scripts/backend-entrypoint.sh" "$stage/release/scripts/"
+mkdir -p "$stage/release/scripts" "$stage/release/traefik" "$stage/release/prometheus" "$stage/release/loki" "$stage/release/alloy" "$stage/release/grafana" "$stage/secrets"
+cp "$repo/scripts/backend-entrypoint.sh" "$repo/scripts/postgres-exporter-entrypoint.sh" "$repo/scripts/redis-exporter-entrypoint.sh" "$stage/release/scripts/"
 cp "$repo/traefik/"*.yml "$stage/release/traefik/"
-for name in postgres_password redis_password jwt_private_key.pem jwt_public_key.pem; do
+cp "$repo/prometheus/prometheus.development.yml" "$stage/release/prometheus/"
+cp "$repo/loki/loki.yml" "$stage/release/loki/"
+cp "$repo/alloy/config.development.alloy" "$stage/release/alloy/"
+cp -R "$repo/grafana/provisioning" "$stage/release/grafana/"
+for name in postgres_password redis_password jwt_private_key.pem jwt_public_key.pem grafana_admin_password; do
   printf 'fixture-only\n' > "$stage/secrets/$name"
 done
-bash "$repo/scripts/sync-development-runtime.sh" "$stage/release" "$volume" "$stage/secrets"
+DEV_OBSERVABILITY_ENABLED=true bash "$repo/scripts/sync-development-runtime.sh" "$stage/release" "$volume" "$stage/secrets"
 docker run --rm --network none --user 1001:1001 \
   --mount type=volume,src=pastoral-dev_runtime-secrets,dst=/run/secrets,readonly \
   --mount "type=volume,src=$volume,dst=/etc/pastoral,readonly" alpine:3.22.1 \
   sh -c 'test -r /run/secrets/jwt_private_key && test -r /run/secrets/postgres_password && test -r /etc/pastoral/scripts/backend-entrypoint.sh && test -r /etc/pastoral/traefik/dynamic/dynamic.yml'
+# Exporters run as nobody with the supplementary application group (group_add 1001).
+docker run --rm --network none --user 65534:65534 --group-add 1001 \
+  --mount type=volume,src=pastoral-dev_runtime-secrets,dst=/run/secrets,readonly \
+  --mount "type=volume,src=$volume,dst=/etc/pastoral,readonly" alpine:3.22.1 \
+  sh -c 'test -r /run/secrets/postgres_password && test -r /run/secrets/redis_password && test -r /etc/pastoral/scripts/postgres-exporter-entrypoint.sh && test -r /etc/pastoral/scripts/redis-exporter-entrypoint.sh'
+# Grafana reads only its own secret; the application UID cannot read it.
+docker run --rm --network none --user 472:0 \
+  --mount type=volume,src=pastoral-dev_observability-secrets,dst=/run/secrets,readonly \
+  --mount "type=volume,src=$volume,dst=/etc/pastoral,readonly" alpine:3.22.1 \
+  sh -c 'test -r /run/secrets/grafana_admin_password && test ! -e /run/secrets/postgres_password && test -r /etc/pastoral/prometheus/prometheus.yml && test -r /etc/pastoral/loki/loki.yml && test -r /etc/pastoral/alloy/config.alloy && test -r /etc/pastoral/grafana/provisioning/datasources/datasources.yml && test -r /etc/pastoral/grafana/provisioning/dashboards/pastoral/host.json'
+if docker run --rm --network none --user 1001:1001 \
+  --mount type=volume,src=pastoral-dev_observability-secrets,dst=/run/secrets,readonly alpine:3.22.1 \
+  test -r /run/secrets/grafana_admin_password; then
+  echo 'Application UID can read the Grafana secret.' >&2
+  exit 1
+fi
 if ! docker network inspect pastoral-dev_app >/dev/null 2>&1; then
   docker network create pastoral-dev_app >/dev/null
   network_created=true
@@ -50,4 +71,4 @@ docker run --rm --network none --mount "type=volume,src=$volume,dst=/data,readon
   docker run --rm -i --network none --mount "type=volume,src=$volume-copy,dst=/data" alpine:3.22.1 tar -C /data -xpf -
 docker run --rm --network none --user 1001:1001 --mount "type=volume,src=$volume-copy,dst=/data,readonly" alpine:3.22.1 test -r /data/scripts/backend-entrypoint.sh
 docker volume rm "$volume-copy" >/dev/null
-echo 'Runtime/secrets, non-root E2E report copy, failed-test propagation and volume transfer passed.'
+echo 'Runtime/secrets, observability secret isolation, non-root E2E report copy, failed-test propagation and volume transfer passed.'
