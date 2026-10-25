@@ -64,7 +64,7 @@ observability=false
 if [[ "${DEV_OBSERVABILITY_ENABLED:-false}" == true ]]; then
   observability=true
 fi
-observability_services=(prometheus loki alloy grafana grafana-tunnel)
+observability_services=(prometheus loki alloy cadvisor postgres-exporter redis-exporter grafana grafana-tunnel)
 desktop_mode=false
 if [[ "$DOCKER_HOST" != unix:///var/run/docker.sock ]]; then
   desktop_mode=true

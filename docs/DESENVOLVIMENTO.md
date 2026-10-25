@@ -189,18 +189,42 @@ arquivos quando `DEV_OBSERVABILITY_ENABLED=true` está em `development.env`.
 
 | Serviço | Coleta / função |
 | --- | --- |
-| Prometheus | `backend:3000/metrics`, Traefik, Loki e Alloy; retenção de 3 dias |
+| Prometheus | `backend:3000/metrics`, Traefik, exporters, Loki e Alloy; retenção de 3 dias |
+| node-exporter do host | Pacote `prometheus-node-exporter` no Ubuntu (fora do Compose), job `node` |
+| cAdvisor | CPU, memória e rede dos containers do daemon selecionado |
+| postgres-exporter / redis-exporter | Conexões, transações, tamanho do banco; memória e comandos do Redis |
 | Loki + Alloy | Logs dos containers com label `com.docker.compose.project=pastoral-dev` |
-| Grafana | Datasources Prometheus e Loki provisionados; sem porta no host |
+| Grafana | Datasources e dashboards provisionados (pasta **Pastoral**); sem porta no host |
 | grafana-tunnel | `cloudflared tunnel --url http://grafana:3000` |
 
+Dashboards em `grafana/provisioning/dashboards/pastoral/`: **Servidor (host)**,
+**Containers**, **Pastoral — Serviços** (Traefik, backend, PostgreSQL, Redis) e
+**Logs**. Os nomes dos jobs são os mesmos da produção. Os dashboards provisionados
+não são editáveis pela UI: altere os JSON no repositório.
+
 A rede `observability` é interna. Grafana não acessa as redes `app` e `data`;
-somente o `grafana-tunnel` tem saída para a internet. Alertmanager, exporters de
-host/banco e dashboards provisionados não fazem parte desta etapa.
+somente o `grafana-tunnel` tem saída para a internet. Os exporters de banco entram
+na rede `data`; o cAdvisor é privilegiado (leitura de `/sys` e do Docker do daemon).
+Alertmanager não faz parte desta etapa.
+
+O node-exporter roda no host para medir o Ubuntu real (no Desktop, um container
+mediria apenas a VM). Ele escuta só em `127.0.0.1:9100`; o Docker Desktop encaminha
+`host.docker.internal` para o loopback do host. No Docker Engine, o tráfego chega
+pela bridge: faça o node-exporter escutar no IP de `host-gateway` (por padrão o
+da `docker0`, `172.17.0.1`).
 
 ### Ativar
 
-1. No Ubuntu, garanta o secret do admin e a leitura pelo runner (não substitui
+1. No Ubuntu, instale o node-exporter do host, somente em loopback:
+
+   ```bash
+   sudo apt-get install -y prometheus-node-exporter
+   sudo sed -i 's|^ARGS=.*|ARGS="--web.listen-address=127.0.0.1:9100 --collector.systemd"|' \
+     /etc/default/prometheus-node-exporter
+   sudo systemctl restart prometheus-node-exporter
+   ```
+
+2. Garanta o secret do admin e a leitura pelo runner (não substitui
    um secret existente):
 
    ```bash
@@ -211,9 +235,9 @@ host/banco e dashboards provisionados não fazem parte desta etapa.
    sudo setfacl -m u:472:r /opt/pastoral/dev/secrets/grafana_admin_password
    ```
 
-2. Acrescente `DEV_OBSERVABILITY_ENABLED=true` em `/opt/pastoral/dev/development.env`
+3. Acrescente `DEV_OBSERVABILITY_ENABLED=true` em `/opt/pastoral/dev/development.env`
    (como `pastoral-runner`). `DEV_GRAFANA_ADMIN_USER` é opcional (padrão `admin`).
-3. Após o merge e a CI da infra, inicie uma nova execução de `Deploy development`.
+4. Após o merge e a CI da infra, inicie uma nova execução de `Deploy development`.
    A observabilidade sobe **depois** da promoção da release: se falhar, o job fica
    vermelho, mas a aplicação validada permanece promovida.
 

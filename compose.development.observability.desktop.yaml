@@ -26,6 +26,21 @@ services:
       - alloy-data:/var/lib/alloy/data
     healthcheck:
       test: [CMD, alloy, fmt, --test, /etc/pastoral/alloy/config.alloy]
+  # Exporters read their password from the application secrets volume (root:1001, 0440).
+  postgres-exporter:
+    entrypoint: [/bin/sh, /etc/pastoral/scripts/postgres-exporter-entrypoint.sh]
+    secrets: !reset []
+    group_add: ["1001"]
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - runtime-secrets:/run/secrets:ro
+  redis-exporter:
+    entrypoint: [/bin/sh, /etc/pastoral/scripts/redis-exporter-entrypoint.sh]
+    secrets: !reset []
+    group_add: ["1001"]
+    volumes: !override
+      - runtime:/etc/pastoral:ro
+      - runtime-secrets:/run/secrets:ro
   grafana:
     environment:
       GF_PATHS_PROVISIONING: /etc/pastoral/grafana/provisioning

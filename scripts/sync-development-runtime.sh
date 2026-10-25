@@ -11,6 +11,7 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/runtime/scripts" "$stage/runtime/traefik/dynamic" "$stage/secrets" "$stage/observability-secrets"
 mkdir -p "$stage/runtime/prometheus" "$stage/runtime/loki" "$stage/runtime/alloy" "$stage/runtime/grafana"
 cp "$release/scripts/backend-entrypoint.sh" "$stage/runtime/scripts/"
+cp "$release/scripts/postgres-exporter-entrypoint.sh" "$release/scripts/redis-exporter-entrypoint.sh" "$stage/runtime/scripts/"
 cp "$release/prometheus/prometheus.development.yml" "$stage/runtime/prometheus/prometheus.yml"
 cp "$release/loki/loki.yml" "$stage/runtime/loki/"
 cp "$release/alloy/config.development.alloy" "$stage/runtime/alloy/config.alloy"

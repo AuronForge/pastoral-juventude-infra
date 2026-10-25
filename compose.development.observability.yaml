@@ -21,6 +21,8 @@ services:
       - prometheus-data:/prometheus
     # app reaches backend/traefik metrics; observability is reached by Grafana.
     networks: [app, observability]
+    # Host node-exporter (outside Compose), see DESENVOLVIMENTO.md.
+    extra_hosts: [host.docker.internal:host-gateway]
     healthcheck:
       test: [CMD, wget, --quiet, --tries=1, --spider, http://127.0.0.1:9090/-/healthy]
       interval: 30s
@@ -74,6 +76,83 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # Containers of the selected daemon; host metrics come from the host node-exporter.
+  cadvisor:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: ghcr.io/google/cadvisor:v0.60.5
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+    privileged: true
+    devices: [/dev/kmsg:/dev/kmsg]
+    mem_limit: 192m
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    networks: [observability]
+    healthcheck:
+      test: [CMD, /usr/bin/healthcheck.sh]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres-exporter:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    entrypoint: [/bin/sh, /opt/pastoral/postgres-exporter-entrypoint.sh]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pastoral}
+      POSTGRES_USER: ${POSTGRES_USER:-pastoral}
+      POSTGRES_HOST: postgres
+    secrets: [postgres_password]
+    read_only: true
+    mem_limit: 64m
+    volumes:
+      - ./scripts/postgres-exporter-entrypoint.sh:/opt/pastoral/postgres-exporter-entrypoint.sh:ro
+    networks: [data, observability]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://127.0.0.1:9187/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  redis-exporter:
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    image: oliver006/redis_exporter:v1.91.1-alpine
+    entrypoint: [/bin/sh, /opt/pastoral/redis-exporter-entrypoint.sh]
+    environment:
+      REDIS_HOST: redis
+    secrets: [redis_password]
+    read_only: true
+    mem_limit: 64m
+    volumes:
+      - ./scripts/redis-exporter-entrypoint.sh:/opt/pastoral/redis-exporter-entrypoint.sh:ro
+    networks: [data, observability]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://127.0.0.1:9121/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   grafana:
     restart: unless-stopped

@@ -21,7 +21,7 @@ if docker volume inspect pastoral-dev_runtime-secrets >/dev/null 2>&1 ||
 fi
 trap cleanup EXIT
 mkdir -p "$stage/release/scripts" "$stage/release/traefik" "$stage/release/prometheus" "$stage/release/loki" "$stage/release/alloy" "$stage/release/grafana" "$stage/secrets"
-cp "$repo/scripts/backend-entrypoint.sh" "$stage/release/scripts/"
+cp "$repo/scripts/backend-entrypoint.sh" "$repo/scripts/postgres-exporter-entrypoint.sh" "$repo/scripts/redis-exporter-entrypoint.sh" "$stage/release/scripts/"
 cp "$repo/traefik/"*.yml "$stage/release/traefik/"
 cp "$repo/prometheus/prometheus.development.yml" "$stage/release/prometheus/"
 cp "$repo/loki/loki.yml" "$stage/release/loki/"
@@ -35,11 +35,16 @@ docker run --rm --network none --user 1001:1001 \
   --mount type=volume,src=pastoral-dev_runtime-secrets,dst=/run/secrets,readonly \
   --mount "type=volume,src=$volume,dst=/etc/pastoral,readonly" alpine:3.22.1 \
   sh -c 'test -r /run/secrets/jwt_private_key && test -r /run/secrets/postgres_password && test -r /etc/pastoral/scripts/backend-entrypoint.sh && test -r /etc/pastoral/traefik/dynamic/dynamic.yml'
+# Exporters run as nobody with the supplementary application group (group_add 1001).
+docker run --rm --network none --user 65534:65534 --group-add 1001 \
+  --mount type=volume,src=pastoral-dev_runtime-secrets,dst=/run/secrets,readonly \
+  --mount "type=volume,src=$volume,dst=/etc/pastoral,readonly" alpine:3.22.1 \
+  sh -c 'test -r /run/secrets/postgres_password && test -r /run/secrets/redis_password && test -r /etc/pastoral/scripts/postgres-exporter-entrypoint.sh && test -r /etc/pastoral/scripts/redis-exporter-entrypoint.sh'
 # Grafana reads only its own secret; the application UID cannot read it.
 docker run --rm --network none --user 472:0 \
   --mount type=volume,src=pastoral-dev_observability-secrets,dst=/run/secrets,readonly \
   --mount "type=volume,src=$volume,dst=/etc/pastoral,readonly" alpine:3.22.1 \
-  sh -c 'test -r /run/secrets/grafana_admin_password && test ! -e /run/secrets/postgres_password && test -r /etc/pastoral/prometheus/prometheus.yml && test -r /etc/pastoral/loki/loki.yml && test -r /etc/pastoral/alloy/config.alloy && test -r /etc/pastoral/grafana/provisioning/datasources/datasources.yml'
+  sh -c 'test -r /run/secrets/grafana_admin_password && test ! -e /run/secrets/postgres_password && test -r /etc/pastoral/prometheus/prometheus.yml && test -r /etc/pastoral/loki/loki.yml && test -r /etc/pastoral/alloy/config.alloy && test -r /etc/pastoral/grafana/provisioning/datasources/datasources.yml && test -r /etc/pastoral/grafana/provisioning/dashboards/pastoral/host.json'
 if docker run --rm --network none --user 1001:1001 \
   --mount type=volume,src=pastoral-dev_observability-secrets,dst=/run/secrets,readonly alpine:3.22.1 \
   test -r /run/secrets/grafana_admin_password; then
