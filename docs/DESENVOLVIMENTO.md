@@ -199,8 +199,19 @@ arquivos quando `DEV_OBSERVABILITY_ENABLED=true` está em `development.env`.
 
 Dashboards em `grafana/provisioning/dashboards/pastoral/`: **Servidor (host)**,
 **Containers**, **Pastoral — Serviços** (Traefik, backend, PostgreSQL, Redis) e
-**Logs**. Os nomes dos jobs são os mesmos da produção. Os dashboards provisionados
-não são editáveis pela UI: altere os JSON no repositório.
+**Logs**. Os nomes dos jobs são os mesmos da produção.
+
+A pasta **Pastoral — Endpoints** (`dashboards/endpoints/`) tem uma visão geral e um
+dashboard por rota exposta no Traefik (`/api/v1/health`, cada rota de
+`/api/v1/autenticacao/*` e o frontend): requisições, status, erros 4xx/5xx,
+latência p50/p95/p99 e tamanho da resposta, calculados no Loki a partir do access
+log JSON do Traefik, além dos logs da aplicação. Sem tráfego no período, os
+painéis mostram "Sem tráfego".
+
+Os JSON são gerados por `scripts/grafana-dashboards.py` e não são editáveis pela
+UI. Para alterar um dashboard ou incluir uma rota nova (lista `ENDPOINTS`), edite o
+script, rode `python3 scripts/grafana-dashboards.py` e versione o resultado; a CI
+falha se os JSON estiverem desatualizados (`--check`).
 
 A rede `observability` é interna. Grafana não acessa as redes `app` e `data`;
 somente o `grafana-tunnel` tem saída para a internet. Os exporters de banco entram
