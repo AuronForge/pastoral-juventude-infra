@@ -135,8 +135,18 @@ def check_desktop_runtime(backend_port, frontend_port):
             (stage / "scripts").mkdir()
             (stage / "traefik").mkdir()
             (stage / "secrets").mkdir()
-            shutil.copyfile(ROOT / "scripts/backend-entrypoint.sh",
-                            stage / "scripts/backend-entrypoint.sh")
+            for script in ("backend-entrypoint.sh", "postgres-exporter-entrypoint.sh",
+                           "redis-exporter-entrypoint.sh"):
+                shutil.copyfile(ROOT / "scripts" / script, stage / "scripts" / script)
+            # sync-development-runtime.sh always stages the observability files.
+            for name in ("prometheus", "loki", "alloy"):
+                (stage / name).mkdir()
+            shutil.copyfile(ROOT / "prometheus/prometheus.development.yml",
+                            stage / "prometheus/prometheus.development.yml")
+            shutil.copyfile(ROOT / "loki/loki.yml", stage / "loki/loki.yml")
+            shutil.copyfile(ROOT / "alloy/config.development.alloy",
+                            stage / "alloy/config.development.alloy")
+            shutil.copytree(ROOT / "grafana/provisioning", stage / "grafana/provisioning")
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
