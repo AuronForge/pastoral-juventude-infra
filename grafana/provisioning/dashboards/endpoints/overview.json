@@ -1,0 +1,373 @@
+{
+  "uid": "pastoral-endpoints",
+  "title": "Endpoints — visão geral",
+  "tags": [
+    "pastoral",
+    "endpoint"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "dashlist",
+      "title": "Dashboards por endpoint",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 10
+      },
+      "options": {
+        "showSearch": true,
+        "showHeadings": false,
+        "showStarred": false,
+        "showRecentlyViewed": false,
+        "query": "",
+        "tags": [
+          "endpoint"
+        ],
+        "maxItems": 20,
+        "includeVars": false,
+        "keepTime": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Requisições da API por caminho e status",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 18,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (RequestMethod, RequestPath, DownstreamStatus) (count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=~`backend-.*` [$__range]))",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "RequestMethod": "Método",
+              "RequestPath": "Caminho",
+              "DownstreamStatus": "Status",
+              "Value": "Requisições"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Requisições",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Requisições da API por caminho",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (RequestPath) (count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=~`backend-.*` [$__auto]))",
+          "refId": "A",
+          "legendFormat": "{{RequestPath}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Latência p95 da API por caminho",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=~`backend-.*` | unwrap Duration [$__auto]) by (RequestPath)",
+          "refId": "A",
+          "legendFormat": "{{RequestPath}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ns",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Erros 4xx/5xx por caminho",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (RequestPath, DownstreamStatus) (count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=~`backend-.*` | DownstreamStatus=~`[45]..` [$__auto]))",
+          "refId": "A",
+          "legendFormat": "{{DownstreamStatus}} {{RequestPath}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Requisições por roteador",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (RouterName) (count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName!=`` [$__auto]))",
+          "refId": "A",
+          "legendFormat": "{{RouterName}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ],
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "endpoint"
+      ],
+      "asDropdown": true,
+      "title": "Endpoints",
+      "includeVars": false,
+      "keepTime": true
+    },
+    {
+      "type": "dashboards",
+      "tags": [
+        "pastoral"
+      ],
+      "asDropdown": true,
+      "title": "Dashboards",
+      "includeVars": false,
+      "keepTime": true
+    }
+  ]
+}

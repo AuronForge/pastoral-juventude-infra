@@ -57,11 +57,8 @@ jobs:
           docker compose -f compose.development.yaml -f compose.development.desktop.yaml \
             -f compose.development.observability.yaml -f compose.development.observability.desktop.yaml config --quiet
 
-      - name: Validate Grafana dashboards
-        run: |
-          for dashboard in grafana/provisioning/dashboards/pastoral/*.json; do
-            python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["uid"] and d["panels"], sys.argv[1]' "$dashboard"
-          done
+      - name: Validate generated Grafana dashboards
+        run: python3 scripts/grafana-dashboards.py --check
 
       - name: Test internal E2E origins
         run: python3 scripts/test-development-origins.py

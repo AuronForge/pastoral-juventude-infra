@@ -1,0 +1,838 @@
+{
+  "uid": "pastoral-endpoint-recuperar-senha",
+  "title": "Endpoint — POST /api/v1/autenticacao/recuperar-senha",
+  "tags": [
+    "pastoral",
+    "endpoint"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Requisições",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` [$__range]))",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "Sem tráfego"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Média por minuto",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` [$__range])) / ($__range_s / 60)",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "noValue": "Sem tráfego"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Sucesso (2xx/3xx)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "100 * (sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | DownstreamStatus=~`[23]..` [$__range])) or vector(0)) / sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` [$__range]))",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "noValue": "Sem tráfego"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Erros 4xx",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "100 * (sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | DownstreamStatus=~`4..` [$__range])) or vector(0)) / sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` [$__range]))",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "noValue": "Sem tráfego"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Erros 5xx",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "100 * (sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | DownstreamStatus=~`5..` [$__range])) or vector(0)) / sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` [$__range]))",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "noValue": "Sem tráfego"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Latência p95",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | unwrap Duration [$__range]) by ()",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ns",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500000000.0
+              },
+              {
+                "color": "red",
+                "value": 1000000000.0
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "Sem tráfego"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Requisições por status",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (DownstreamStatus) (count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` [$__auto]))",
+          "refId": "A",
+          "legendFormat": "{{DownstreamStatus}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Latência",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.5, {service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | unwrap Duration [$__auto]) by ()",
+          "refId": "A",
+          "legendFormat": "p50"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | unwrap Duration [$__auto]) by ()",
+          "refId": "B",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.99, {service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | unwrap Duration [$__auto]) by ()",
+          "refId": "C",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ns",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Requisições por método",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (RequestMethod) (count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` [$__auto]))",
+          "refId": "A",
+          "legendFormat": "{{RequestMethod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Método declarado: POST. Outros métodos indicam chamadas incorretas."
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Erros",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | DownstreamStatus=~`4..` [$__auto]))",
+          "refId": "A",
+          "legendFormat": "4xx"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | DownstreamStatus=~`5..` [$__auto]))",
+          "refId": "B",
+          "legendFormat": "5xx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Tamanho médio da resposta",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "avg_over_time({service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | unwrap DownstreamContentSize [$__auto]) by ()",
+          "refId": "A",
+          "legendFormat": "bytes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "logs",
+      "title": "Acessos (Traefik)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service=\"traefik\"} | json RouterName, RequestMethod, RequestPath, DownstreamStatus, Duration, DownstreamContentSize | RouterName=`backend-api-v1@file` | RequestPath=~`/api/v1/autenticacao/recuperar-senha(\\?.*)?` | line_format \"{{.DownstreamStatus}} {{.RequestMethod}} {{.RequestPath}} {{ div .Duration 1000000 }} ms\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 13,
+      "type": "logs",
+      "title": "Logs da aplicação",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service=\"backend\"} |= `/api/v1/autenticacao/recuperar-senha`",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "dedupStrategy": "none"
+      }
+    }
+  ],
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "endpoint"
+      ],
+      "asDropdown": true,
+      "title": "Endpoints",
+      "includeVars": false,
+      "keepTime": true
+    },
+    {
+      "type": "dashboards",
+      "tags": [
+        "pastoral"
+      ],
+      "asDropdown": true,
+      "title": "Dashboards",
+      "includeVars": false,
+      "keepTime": true
+    }
+  ]
+}
