@@ -14,10 +14,11 @@ entrega. O login visual continua apenas no Storybook, sem rota de login na aplic
 
 `compose.development.yaml` é independente do Compose existente: projeto
 `pastoral-dev`, redes e volumes próprios. Sobe Traefik, frontend, backend,
-PostgreSQL e Redis. Observabilidade completa, Funnel e backup diário do Compose
-original não são iniciados por este workflow. Nesta etapa os backups são feitos
-antes de cada deploy; o backup diário e a observabilidade de desenvolvimento
-precisam de uma configuração específica antes de sua ativação.
+PostgreSQL e Redis. Funnel e backup diário do Compose original não são iniciados
+por este workflow. Nesta etapa os backups são feitos antes de cada deploy; o
+backup diário precisa de uma configuração específica antes de sua ativação.
+A observabilidade de desenvolvimento é opcional: consulte
+[Grafana de desenvolvimento via túnel](#grafana-de-desenvolvimento-via-túnel).
 
 ## Docker Desktop no Ubuntu
 
@@ -177,6 +178,73 @@ A resposta pública não contém credenciais, mensagens de exceção ou métrica
 de recursos. `/health/live`, `/health/ready` e `/metrics` permanecem internos.
 O liveness interno mantém o contrato mínimo de processo ativo. A CI usa
 Traefik real para testar a reescrita, HTTP 503, ausência de cache e isolamento.
+
+## Grafana de desenvolvimento via túnel
+
+`compose.development.observability.yaml` acrescenta ao projeto `pastoral-dev`
+Prometheus, Loki, Alloy, Grafana e o container `grafana-tunnel` (Cloudflare
+Quick Tunnel). No Desktop, `compose.development.observability.desktop.yaml`
+troca os bind mounts pelo volume de runtime da release. O deploy só inclui esses
+arquivos quando `DEV_OBSERVABILITY_ENABLED=true` está em `development.env`.
+
+| Serviço | Coleta / função |
+| --- | --- |
+| Prometheus | `backend:3000/metrics`, Traefik, Loki e Alloy; retenção de 3 dias |
+| Loki + Alloy | Logs dos containers com label `com.docker.compose.project=pastoral-dev` |
+| Grafana | Datasources Prometheus e Loki provisionados; sem porta no host |
+| grafana-tunnel | `cloudflared tunnel --url http://grafana:3000` |
+
+A rede `observability` é interna. Grafana não acessa as redes `app` e `data`;
+somente o `grafana-tunnel` tem saída para a internet. Alertmanager, exporters de
+host/banco e dashboards provisionados não fazem parte desta etapa.
+
+### Ativar
+
+1. No Ubuntu, garanta o secret do admin e a leitura pelo runner (não substitui
+   um secret existente):
+
+   ```bash
+   sudo test -s /opt/pastoral/dev/secrets/grafana_admin_password || \
+     sudo sh -c 'umask 077; openssl rand -base64 48 | tr -dc A-Za-z0-9 | cut -c1-40 > /opt/pastoral/dev/secrets/grafana_admin_password'
+   sudo setfacl -m u:pastoral-runner:r /opt/pastoral/dev/secrets/grafana_admin_password
+   # Somente no Docker Engine (sem Desktop): leitura pelo UID do Grafana.
+   sudo setfacl -m u:472:r /opt/pastoral/dev/secrets/grafana_admin_password
+   ```
+
+2. Acrescente `DEV_OBSERVABILITY_ENABLED=true` em `/opt/pastoral/dev/development.env`
+   (como `pastoral-runner`). `DEV_GRAFANA_ADMIN_USER` é opcional (padrão `admin`).
+3. Após o merge e a CI da infra, inicie uma nova execução de `Deploy development`.
+   A observabilidade sobe **depois** da promoção da release: se falhar, o job fica
+   vermelho, mas a aplicação validada permanece promovida.
+
+### Obter a URL e entrar
+
+```bash
+sudo -u pastoral-runner bash /opt/pastoral/dev/current/scripts/grafana-tunnel-url.sh
+sudo cat /opt/pastoral/dev/secrets/grafana_admin_password
+```
+
+O script também funciona para o usuário com acesso ao contexto `desktop-linux`.
+A URL `https://….trycloudflare.com` muda sempre que `grafana-tunnel` reinicia ou é
+recriado (deploy, reinício do Desktop ou do Ubuntu). Não versione nem favorite
+a URL como definitiva; para endereço fixo, use túnel nomeado com domínio próprio.
+
+O Grafana fica **público na internet** durante a vida do túnel: anônimo e cadastro
+desabilitados, cookie `Secure`, proteção contra força bruta padrão do Grafana e
+senha de 40 caracteres. A senha do admin é aplicada somente na criação do volume
+`grafana-data`; para trocá-la depois, use `grafana cli admin reset-admin-password`
+dentro do container.
+
+### Desativar
+
+Defina `DEV_OBSERVABILITY_ENABLED=false`. O deploy deixa de gerenciar os serviços,
+mas não os remove. Para parar o túnel e os demais imediatamente, como `pastoral-runner`:
+
+```bash
+source /opt/pastoral/dev/current/scripts/development-docker.sh && development_docker
+docker stop $(docker ps -q --filter label=com.docker.compose.project=pastoral-dev \
+  --filter label=com.docker.compose.service=grafana-tunnel)
+```
 
 ## Diagnóstico de recursos no Ubuntu
 
@@ -370,7 +438,7 @@ As verificações locais cobrem sintaxe Bash/SH e estrutura YAML. As validaçõe
 Docker, imagens, migrations e Playwright são responsabilidade das CIs dos PRs
 e do primeiro deploy no Ubuntu. O ambiente não é considerado iniciado até
 essas execuções passarem. Integração do login na aplicação, massa funcional,
-observabilidade de desenvolvimento e promoção de ambientes são próximas entregas.
+dashboards/alertas de desenvolvimento e promoção de ambientes são próximas entregas.
 
 
 

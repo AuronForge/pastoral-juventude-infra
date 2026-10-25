@@ -47,13 +47,24 @@ fi
 
 release_id="${GITHUB_RUN_ID:-manual}-$(date -u +%Y%m%dT%H%M%SZ)"
 release_dir="$deploy_root/releases/$release_id"
-mkdir -p "$release_dir/scripts" "$release_dir/traefik"
+mkdir -p "$release_dir/scripts" "$release_dir/traefik" "$release_dir/prometheus" "$release_dir/loki" "$release_dir/alloy" "$release_dir/grafana"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cp "$repo_root/compose.development.yaml" "$repo_root/compose.development.desktop.yaml" "$release_dir/"
+cp "$repo_root/compose.development.observability.yaml" "$repo_root/compose.development.observability.desktop.yaml" "$release_dir/"
+cp "$repo_root/prometheus/prometheus.development.yml" "$release_dir/prometheus/"
+cp "$repo_root/loki/loki.yml" "$release_dir/loki/"
+cp "$repo_root/alloy/config.development.alloy" "$release_dir/alloy/"
+cp -R "$repo_root/grafana/provisioning" "$release_dir/grafana/"
 cp "$repo_root/scripts/"*.sh "$repo_root/scripts/"*.py "$release_dir/scripts/"
 cp -R "$repo_root/docker" "$release_dir/"
 cp "$repo_root/traefik/traefik.yml" "$repo_root/traefik/dynamic.development.yml" "$release_dir/traefik/"
 chmod 0644 "$release_dir/scripts/backend-entrypoint.sh" "$release_dir/traefik/traefik.yml" "$release_dir/traefik/dynamic.development.yml"
+chmod -R a+rX "$release_dir/prometheus" "$release_dir/loki" "$release_dir/alloy" "$release_dir/grafana"
+observability=false
+if [[ "${DEV_OBSERVABILITY_ENABLED:-false}" == true ]]; then
+  observability=true
+fi
+observability_services=(prometheus loki alloy grafana grafana-tunnel)
 desktop_mode=false
 if [[ "$DOCKER_HOST" != unix:///var/run/docker.sock ]]; then
   desktop_mode=true
@@ -65,6 +76,12 @@ compose=(docker compose --project-name pastoral-dev --project-directory "$releas
 if [[ "$desktop_mode" == true ]]; then
   compose+=(-f "$release_dir/compose.development.desktop.yaml")
 fi
+if [[ "$observability" == true ]]; then
+  compose+=(-f "$release_dir/compose.development.observability.yaml")
+  if [[ "$desktop_mode" == true ]]; then
+    compose+=(-f "$release_dir/compose.development.observability.desktop.yaml")
+  fi
+fi
 report_dir="$deploy_root/reports/$release_id"
 mkdir -p "$report_dir/playwright-report" "$report_dir/test-results"
 export DEV_REPORT_DIR="$report_dir"
@@ -72,17 +89,25 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   echo "report_dir=$report_dir" >> "$GITHUB_OUTPUT"
 fi
 
+promoted=false
 diagnose() {
   result=$?
   if (( result != 0 )); then
     "${compose[@]}" ps > "$report_dir/compose-status.txt" 2>&1 || true
-    echo "Deploy failed. Candidate: $release_dir. Validated release references were retained; running containers may use candidate images. No automatic rollback was performed." >&2
+    if [[ "$promoted" == true ]]; then
+      echo "Release $release_dir was validated and promoted; only the post-promotion steps failed." >&2
+    else
+      echo "Deploy failed. Candidate: $release_dir. Validated release references were retained; running containers may use candidate images. No automatic rollback was performed." >&2
+    fi
   fi
 }
 trap diagnose EXIT
 
 "${compose[@]}" config --quiet
 "${compose[@]}" pull traefik frontend backend migrate postgres
+if [[ "$observability" == true ]]; then
+  "${compose[@]}" pull "${observability_services[@]}"
+fi
 "${compose[@]}" build redis health-report
 "${compose[@]}" up -d --wait --wait-timeout 180 postgres redis
 # Snapshot before every migration, including the first empty baseline.
@@ -113,10 +138,20 @@ if [[ -f "$deploy_root/current-images.env" ]]; then
 fi
 mv "$deploy_root/current-images.env.tmp" "$deploy_root/current-images.env"
 ln -sfn "$release_dir" "$deploy_root/current"
+promoted=true
 {
   printf 'release=%s\ncomponent=%s\ncommit=%s\ne2e=%s\n' "$release_id" "$component" "$commit_sha" "$e2e_sha"
   printf 'infra=%s\n' "$(git -C "$repo_root" rev-parse HEAD)"
   cat "$deploy_root/current-images.env"
 } > "$report_dir/deployment.txt"
 echo "Development deployment and smoke tests passed: $release_id"
+
+# Started after promotion: an observability failure must not block the application.
+if [[ "$observability" == true ]]; then
+  if ! "${compose[@]}" up -d --wait --wait-timeout 180 "${observability_services[@]}"; then
+    echo "Application release $release_id was promoted, but observability failed to start." >&2
+    exit 1
+  fi
+  echo "Observability running; Grafana URL: bash $release_dir/scripts/grafana-tunnel-url.sh"
+fi
 

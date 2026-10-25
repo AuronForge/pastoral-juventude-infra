@@ -46,6 +46,17 @@ jobs:
           DEV_RUNTIME_VOLUME: pastoral-dev_runtime-ci
         run: docker compose -f compose.development.yaml -f compose.development.desktop.yaml config --quiet
 
+      - name: Validate development observability Compose
+        env:
+          BACKEND_IMAGE: ghcr.io/auronforge/pastoral-juventude-backend:dev-ci
+          MIGRATION_IMAGE: ghcr.io/auronforge/pastoral-juventude-backend:dev-ci-migrations
+          FRONTEND_IMAGE: ghcr.io/auronforge/pastoral-juventude-frontend:dev-ci
+          DEV_RUNTIME_VOLUME: pastoral-dev_runtime-ci
+        run: |
+          docker compose -f compose.development.yaml -f compose.development.observability.yaml config --quiet
+          docker compose -f compose.development.yaml -f compose.development.desktop.yaml \
+            -f compose.development.observability.yaml -f compose.development.observability.desktop.yaml config --quiet
+
       - name: Test internal E2E origins
         run: python3 scripts/test-development-origins.py
 
@@ -64,7 +75,7 @@ jobs:
           --volume "$PWD/prometheus:/etc/prometheus:ro"
           --entrypoint /bin/promtool
           prom/prometheus:v3.14.0
-          check config /etc/prometheus/prometheus.yml
+          check config /etc/prometheus/prometheus.yml /etc/prometheus/prometheus.development.yml
 
       - name: Validate Loki configuration
         run: >-
@@ -81,6 +92,11 @@ jobs:
             grafana/alloy:v1.19.2 \
             fmt /etc/alloy/config.alloy > /tmp/config.alloy
           diff --unified alloy/config.alloy /tmp/config.alloy
+          docker run --rm \
+            --volume "$PWD/alloy/config.development.alloy:/etc/alloy/config.alloy:ro" \
+            grafana/alloy:v1.19.2 \
+            fmt /etc/alloy/config.alloy > /tmp/config.development.alloy
+          diff --unified alloy/config.development.alloy /tmp/config.development.alloy
 
       - name: Build custom images
         run: docker compose build redis postgres-backup
